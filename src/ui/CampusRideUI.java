@@ -5,6 +5,7 @@ import exception.InvalidRideException;
 import exception.RideNotFoundException;
 import model.Driver;
 import model.Ride;
+import model.RideRequest;
 import model.Student;
 import model.Vehicle;
 import service.AuthService;
@@ -99,11 +100,14 @@ public class CampusRideUI {
     private DefaultTableModel dashboardRidesModel;
     private JLabel statAvailableCountLabel;
     private JLabel statMyRidesCountLabel;
+    private JLabel statPendingRequestsLabel;
     private JLabel statVerificationBadgeLabel;
 
     // Search & My Rides Table Models
     private DefaultTableModel searchResultsModel;
     private DefaultTableModel myRidesModel;
+    private DefaultTableModel incomingRequestsModel;
+    private DefaultTableModel mySubmittedRequestsModel;
 
     // Profile Screen dynamic labels
     private JLabel profileNameLabel;
@@ -128,6 +132,17 @@ public class CampusRideUI {
         // Load academic file handling records into memory cache
         this.authService.setStudents(fileService.loadStudents());
         this.rideService.setRides(fileService.loadRides());
+
+        // Sync real rides from Supabase if configured
+        if (supabase.SupabaseConfig.isConfigured()) {
+            new SwingWorker<Void, Void>() {
+                @Override
+                protected Void doInBackground() {
+                    rideService.syncRidesFromSupabase();
+                    return null;
+                }
+            }.execute();
+        }
     }
 
     /**
@@ -285,6 +300,13 @@ public class CampusRideUI {
         menuPanel.add(createSidebarNavButton("My Rides", SCREEN_MY_RIDES, activeScreen));
         menuPanel.add(Box.createVerticalStrut(6));
         menuPanel.add(createSidebarNavButton("Profile", SCREEN_PROFILE, activeScreen));
+        menuPanel.add(Box.createVerticalStrut(6));
+        JButton fuelNavBtn = createSidebarNavButton("Fuel Estimator", "ACTION_FUEL", activeScreen);
+        for (java.awt.event.ActionListener al : fuelNavBtn.getActionListeners()) {
+            fuelNavBtn.removeActionListener(al);
+        }
+        fuelNavBtn.addActionListener(e -> showPetrolCostEstimatorDialog(null));
+        menuPanel.add(fuelNavBtn);
 
         // Bottom User Info & Logout
         JPanel bottomPanel = new JPanel();
@@ -461,25 +483,43 @@ public class CampusRideUI {
                 return;
             }
 
-            try {
-                Student loggedIn = authService.login(email, password);
-                if (loggedIn != null) {
-                    passField.setText("");
-                    showScreen(SCREEN_DASHBOARD);
+            loginButton.setEnabled(false);
+            loginButton.setText("Logging in...");
+
+            SwingWorker<Student, Void> loginWorker = new SwingWorker<>() {
+                @Override
+                protected Student doInBackground() throws Exception {
+                    return authService.login(email, password);
                 }
-            } catch (InvalidLoginException ex) {
-                if (ex.getMessage().contains("verify your college email")) {
-                    pendingVerificationEmail = email;
-                    int opt = JOptionPane.showConfirmDialog(mainFrame,
-                            ex.getMessage() + "\n\nWould you like to open the Email Verification screen now?",
-                            "Email Verification Required", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
-                    if (opt == JOptionPane.YES_OPTION) {
-                        showScreen(SCREEN_VERIFY);
+
+                @Override
+                protected void done() {
+                    loginButton.setEnabled(true);
+                    loginButton.setText("Login to Account");
+                    try {
+                        Student loggedIn = get();
+                        if (loggedIn != null) {
+                            passField.setText("");
+                            showScreen(SCREEN_DASHBOARD);
+                        }
+                    } catch (Exception ex) {
+                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                        String msg = cause.getMessage() != null ? cause.getMessage() : "Login failed";
+                        if (msg.contains("verify your college email")) {
+                            pendingVerificationEmail = email;
+                            int opt = JOptionPane.showConfirmDialog(mainFrame,
+                                    msg + "\n\nWould you like to open the Email Verification screen now?",
+                                    "Email Verification Required", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                            if (opt == JOptionPane.YES_OPTION) {
+                                showScreen(SCREEN_VERIFY);
+                            }
+                        } else {
+                            JOptionPane.showMessageDialog(mainFrame, msg, "Login Failed", JOptionPane.ERROR_MESSAGE);
+                        }
                     }
-                } else {
-                    JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Login Failed", JOptionPane.ERROR_MESSAGE);
                 }
-            }
+            };
+            loginWorker.execute();
         });
 
         registerButton.addActionListener(e -> showScreen(SCREEN_REGISTER));
@@ -589,29 +629,46 @@ public class CampusRideUI {
 
             Student newStudent = new Student(name, regNum, email, password);
 
-            try {
-                boolean success = authService.registerStudent(newStudent);
-                if (success) {
-                    fileService.saveStudent(newStudent);
-                    pendingVerificationEmail = email;
-                    JOptionPane.showMessageDialog(mainFrame,
-                            "Registration successful. Please verify your college email before logging in.",
-                            "Registration Successful", JOptionPane.INFORMATION_MESSAGE);
+            registerBtn.setEnabled(false);
+            registerBtn.setText("Registering with Supabase...");
 
-                    nameField.setText("");
-                    regNumField.setText("");
-                    emailField.setText("");
-                    passField.setText("");
-                    confirmPassField.setText("");
-
-                    if (loginEmailField != null) {
-                        loginEmailField.setText(email);
-                    }
-                    showScreen(SCREEN_LOGIN);
+            SwingWorker<Boolean, Void> registerWorker = new SwingWorker<>() {
+                @Override
+                protected Boolean doInBackground() throws Exception {
+                    return authService.registerStudent(newStudent);
                 }
-            } catch (InvalidLoginException ex) {
-                JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Registration Error", JOptionPane.ERROR_MESSAGE);
-            }
+
+                @Override
+                protected void done() {
+                    registerBtn.setEnabled(true);
+                    registerBtn.setText("Register Account");
+                    try {
+                        boolean success = get();
+                        if (success) {
+                            fileService.saveStudent(newStudent);
+                            pendingVerificationEmail = email;
+                            JOptionPane.showMessageDialog(mainFrame,
+                                    "Registration successful. Please verify your college email before logging in.",
+                                    "Registration Successful", JOptionPane.INFORMATION_MESSAGE);
+
+                            nameField.setText("");
+                            regNumField.setText("");
+                            emailField.setText("");
+                            passField.setText("");
+                            confirmPassField.setText("");
+
+                            if (loginEmailField != null) {
+                                loginEmailField.setText(email);
+                            }
+                            showScreen(SCREEN_LOGIN);
+                        }
+                    } catch (Exception ex) {
+                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                        JOptionPane.showMessageDialog(mainFrame, cause.getMessage(), "Registration Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            };
+            registerWorker.execute();
         });
 
         backBtn.addActionListener(e -> showScreen(SCREEN_LOGIN));
@@ -808,15 +865,17 @@ public class CampusRideUI {
         headerSection.add(Box.createVerticalStrut(18));
 
         // Real Data Summary Cards (Zero fake statistics, strictly active counts)
-        JPanel statsRow = new JPanel(new GridLayout(1, 3, 14, 0));
+        JPanel statsRow = new JPanel(new GridLayout(1, 4, 12, 0));
         statsRow.setOpaque(false);
 
         statAvailableCountLabel = new JLabel("0 Available");
         statMyRidesCountLabel = new JLabel("0 Offered");
+        statPendingRequestsLabel = new JLabel("0 Pending");
         statVerificationBadgeLabel = new JLabel("Verified ✔");
 
         statsRow.add(createStatCard("AVAILABLE CAMPUS RIDES", statAvailableCountLabel, "Active community listings"));
         statsRow.add(createStatCard("MY POSTED RIDES", statMyRidesCountLabel, "Trips offered by you"));
+        statsRow.add(createStatCard("PENDING REQUESTS", statPendingRequestsLabel, "Incoming passenger actions"));
         statsRow.add(createStatCard("STUDENT STATUS", statVerificationBadgeLabel, "NSSCE Verified Student"));
 
         headerSection.add(statsRow);
@@ -859,7 +918,7 @@ public class CampusRideUI {
 
         tableHeaderPanel.add(tableTitlesWrapper, BorderLayout.WEST);
 
-        String[] cols = {"Ride ID", "Driver", "From", "To", "Date", "Time", "Seats Left", "Fare ($)"};
+        String[] cols = {"Ride ID", "Driver", "From", "To", "Date", "Time", "Seats Left", "Fare ($)", "Notes"};
         dashboardRidesModel = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int col) { return false; }
@@ -871,30 +930,25 @@ public class CampusRideUI {
         scrollPane.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
         scrollPane.getViewport().setBackground(COLOR_IVORY_CARD);
 
-        JPanel tableBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        JPanel tableBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         tableBottom.setOpaque(false);
 
-        JButton quickBookBtn = createPrimaryButton("Book Selected Ride");
+        JButton refreshDashBtn = createOutlineButton("⟳ Refresh");
+        refreshDashBtn.addActionListener(e -> refreshDashboard());
+
+        JButton quickBookBtn = createPrimaryButton("Request Ride Seat");
         quickBookBtn.addActionListener(e -> {
             int selectedRow = table.getSelectedRow();
             if (selectedRow == -1) {
-                JOptionPane.showMessageDialog(mainFrame, "Please select a ride to book from the table.", "Selection Required", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(mainFrame, "Please select a ride to request from the table.", "Selection Required", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
             String rideId = (String) dashboardRidesModel.getValueAt(selectedRow, 0);
-            try {
-                boolean success = rideService.bookRide(rideId);
-                if (success) {
-                    fileService.saveAllRides(rideService.getRides());
-                    JOptionPane.showMessageDialog(mainFrame, "Seat successfully booked for Ride " + rideId + "!", "Booking Confirmed", JOptionPane.INFORMATION_MESSAGE);
-                    refreshDashboard();
-                }
-            } catch (RideNotFoundException | InvalidRideException ex) {
-                JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Booking Failed", JOptionPane.ERROR_MESSAGE);
-            }
+            handleRequestRideAction(rideId);
         });
 
+        tableBottom.add(refreshDashBtn);
         tableBottom.add(quickBookBtn);
 
         tableContainer.add(tableHeaderPanel, BorderLayout.NORTH);
@@ -910,30 +964,68 @@ public class CampusRideUI {
         Student current = authService.getCurrentLoggedInStudent();
         if (current != null) {
             dashboardGreetingLabel.setText("Welcome back, " + current.getName() + " (" + current.getStudentId() + ")");
-            int myCount = rideService.getRidesByDriver(current.getStudentId()).size();
-            statMyRidesCountLabel.setText(myCount + (myCount == 1 ? " Ride" : " Rides"));
             boolean isV = authService.isEmailVerified(current.getEmail());
             statVerificationBadgeLabel.setText(isV ? "Verified ✔" : "Pending ⏳");
             statVerificationBadgeLabel.setForeground(isV ? COLOR_SUCCESS : COLOR_WARNING);
         }
 
-        dashboardRidesModel.setRowCount(0);
-        ArrayList<Ride> rides = rideService.getRides();
-        statAvailableCountLabel.setText(rides.size() + (rides.size() == 1 ? " Ride" : " Rides"));
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                rideService.syncRidesFromSupabase();
+                if (current != null) {
+                    rideService.syncRequestsFromSupabase(current);
+                }
+                return null;
+            }
 
-        for (Ride r : rides) {
-            String driverName = (r.getDriver() != null) ? r.getDriver().getName() : "N/A";
-            dashboardRidesModel.addRow(new Object[]{
-                    r.getRideId(),
-                    driverName,
-                    r.getStartingLocation(),
-                    r.getDestination(),
-                    r.getDate(),
-                    r.getDepartureTime(),
-                    r.getAvailableSeats(),
-                    String.format("%.2f", r.getCostPerPerson())
-            });
-        }
+            @Override
+            protected void done() {
+                dashboardRidesModel.setRowCount(0);
+                ArrayList<Ride> rides = rideService.getRides();
+                statAvailableCountLabel.setText(rides.size() + (rides.size() == 1 ? " Ride" : " Rides"));
+
+                if (current != null) {
+                    int myCount = 0;
+                    for (Ride r : rides) {
+                        if (r.getDriver() != null) {
+                            if ((current.getId() != null && current.getId().equalsIgnoreCase(r.getDriver().getId()))
+                                    || (current.getStudentId() != null && current.getStudentId().equalsIgnoreCase(r.getDriver().getStudentId()))) {
+                                myCount++;
+                            }
+                        }
+                    }
+                    statMyRidesCountLabel.setText(myCount + (myCount == 1 ? " Ride" : " Rides"));
+
+                    String driverId = (current.getId() != null && !current.getId().isEmpty()) ? current.getId() : current.getStudentId();
+                    ArrayList<RideRequest> incoming = rideService.getRequestsForDriver(driverId);
+                    int pendingCount = 0;
+                    for (RideRequest req : incoming) {
+                        if (req.isPending()) pendingCount++;
+                    }
+                    statPendingRequestsLabel.setText(pendingCount + (pendingCount == 1 ? " Pending" : " Pending"));
+                    statPendingRequestsLabel.setForeground(pendingCount > 0 ? COLOR_WARNING : COLOR_SUCCESS);
+                }
+
+                for (Ride r : rides) {
+                    String driverName = (r.getDriver() != null && r.getDriver().getName() != null && !r.getDriver().getName().isEmpty())
+                            ? r.getDriver().getName() : "Student Driver";
+                    String notes = (r.getNotes() != null && !r.getNotes().isEmpty()) ? r.getNotes() : "-";
+                    dashboardRidesModel.addRow(new Object[]{
+                            r.getRideId(),
+                            driverName,
+                            r.getStartingLocation(),
+                            r.getDestination(),
+                            r.getDate(),
+                            r.getDepartureTime(),
+                            r.getAvailableSeats(),
+                            String.format("%.2f", r.getCostPerPerson()),
+                            notes
+                    });
+                }
+            }
+        };
+        worker.execute();
     }
 
     // =========================================================================
@@ -970,8 +1062,8 @@ public class CampusRideUI {
         header.add(backBtn, BorderLayout.EAST);
         contentPanel.add(header, BorderLayout.NORTH);
 
-        JPanel card = createCardPanel(640, 480);
-        card.setLayout(new GridLayout(9, 2, 14, 8));
+        JPanel card = createCardPanel(680, 520);
+        card.setLayout(new GridLayout(10, 2, 14, 8));
 
         JTextField startLocField = createStyledTextField();
         JTextField destField = createStyledTextField();
@@ -993,6 +1085,15 @@ public class CampusRideUI {
         seatsField.setText("3");
         JTextField costField = createStyledTextField();
         costField.setText("20.00");
+        JTextField notesField = createStyledTextField();
+        notesField.setText("Leaving on time, luggage space available");
+
+        JPanel costRow = new JPanel(new BorderLayout(8, 0));
+        costRow.setOpaque(false);
+        costRow.add(costField, BorderLayout.CENTER);
+        JButton fuelCalcBtn = createSecondaryButton("⚡ Fuel Estimator");
+        fuelCalcBtn.addActionListener(e -> showPetrolCostEstimatorDialog(costField));
+        costRow.add(fuelCalcBtn, BorderLayout.EAST);
 
         card.add(createFormLabel("Starting Location:"));
         card.add(startLocField);
@@ -1011,7 +1112,9 @@ public class CampusRideUI {
         card.add(createFormLabel("Available Passenger Seats:"));
         card.add(seatsField);
         card.add(createFormLabel("Cost Per Person ($):"));
-        card.add(costField);
+        card.add(costRow);
+        card.add(createFormLabel("Optional Notes:"));
+        card.add(notesField);
 
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         bottomPanel.setOpaque(false);
@@ -1033,6 +1136,7 @@ public class CampusRideUI {
                 String time = timeField.getText().trim();
                 String vType = (String) vehicleTypeCombo.getSelectedItem();
                 String vNumber = regNumField.getText().trim();
+                String notes = notesField.getText().trim();
                 int capacity = Integer.parseInt(capacityField.getText().trim());
                 int availableSeats = Integer.parseInt(seatsField.getText().trim());
                 double cost = Double.parseDouble(costField.getText().trim());
@@ -1042,10 +1146,11 @@ public class CampusRideUI {
                     return;
                 }
 
-                String rideId = "RIDE-" + (rideService.getRides().size() + 101);
+                String rideId = java.util.UUID.randomUUID().toString();
 
                 Vehicle vehicle = new Vehicle(vType, vNumber, capacity);
                 Driver driver = new Driver(
+                        currentStudent.getId(),
                         currentStudent.getName(),
                         currentStudent.getStudentId(),
                         currentStudent.getEmail(),
@@ -1053,14 +1158,31 @@ public class CampusRideUI {
                         vehicle
                 );
 
-                Ride ride = new Ride(rideId, driver, startLoc, dest, date, time, availableSeats, cost);
-                rideService.offerRide(ride);
-                fileService.saveRide(ride);
+                Ride ride = new Ride(rideId, driver, startLoc, dest, date, time, availableSeats, cost, notes);
 
-                JOptionPane.showMessageDialog(mainFrame, "Ride published successfully! ID: " + rideId, "Success", JOptionPane.INFORMATION_MESSAGE);
-                startLocField.setText("");
-                destField.setText("");
-                showScreen(SCREEN_DASHBOARD);
+                publishBtn.setEnabled(false);
+                publishBtn.setText("Publishing to Supabase...");
+
+                SwingWorker<Boolean, Void> offerWorker = new SwingWorker<>() {
+                    @Override
+                    protected Boolean doInBackground() {
+                        rideService.offerRide(ride);
+                        fileService.saveRide(ride);
+                        return true;
+                    }
+
+                    @Override
+                    protected void done() {
+                        publishBtn.setEnabled(true);
+                        publishBtn.setText("Publish Ride to CampusRide");
+                        JOptionPane.showMessageDialog(mainFrame, "Ride published successfully! ID: " + rideId, "Success", JOptionPane.INFORMATION_MESSAGE);
+                        startLocField.setText("");
+                        destField.setText("");
+                        notesField.setText("");
+                        showScreen(SCREEN_DASHBOARD);
+                    }
+                };
+                offerWorker.execute();
 
             } catch (NumberFormatException nfe) {
                 JOptionPane.showMessageDialog(mainFrame, "Please enter valid numbers for capacity, seats, and cost.", "Numeric Error", JOptionPane.ERROR_MESSAGE);
@@ -1156,7 +1278,7 @@ public class CampusRideUI {
         filterCard.add(showAllBtn);
 
         // Search Results Table
-        String[] cols = {"Ride ID", "Driver", "From", "To", "Date", "Time", "Seats Left", "Fare ($)"};
+        String[] cols = {"Ride ID", "Driver", "From", "To", "Date", "Time", "Seats Left", "Fare ($)", "Notes"};
         searchResultsModel = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int col) { return false; }
@@ -1170,7 +1292,7 @@ public class CampusRideUI {
 
         JPanel tableActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         tableActions.setOpaque(false);
-        JButton bookSelectedBtn = createPrimaryButton("Book Selected Ride");
+        JButton bookSelectedBtn = createPrimaryButton("Request Selected Ride");
 
         searchBtn.addActionListener(e -> {
             String src = srcField.getText().trim();
@@ -1194,7 +1316,9 @@ public class CampusRideUI {
             }
 
             for (Ride r : results) {
-                String driverName = (r.getDriver() != null) ? r.getDriver().getName() : "N/A";
+                String driverName = (r.getDriver() != null && r.getDriver().getName() != null && !r.getDriver().getName().isEmpty())
+                        ? r.getDriver().getName() : "Student Driver";
+                String notes = (r.getNotes() != null && !r.getNotes().isEmpty()) ? r.getNotes() : "-";
                 searchResultsModel.addRow(new Object[]{
                         r.getRideId(),
                         driverName,
@@ -1203,7 +1327,8 @@ public class CampusRideUI {
                         r.getDate(),
                         r.getDepartureTime(),
                         r.getAvailableSeats(),
-                        String.format("%.2f", r.getCostPerPerson())
+                        String.format("%.2f", r.getCostPerPerson()),
+                        notes
                 });
             }
 
@@ -1215,7 +1340,9 @@ public class CampusRideUI {
         showAllBtn.addActionListener(e -> {
             searchResultsModel.setRowCount(0);
             for (Ride r : rideService.getRides()) {
-                String driverName = (r.getDriver() != null) ? r.getDriver().getName() : "N/A";
+                String driverName = (r.getDriver() != null && r.getDriver().getName() != null && !r.getDriver().getName().isEmpty())
+                        ? r.getDriver().getName() : "Student Driver";
+                String notes = (r.getNotes() != null && !r.getNotes().isEmpty()) ? r.getNotes() : "-";
                 searchResultsModel.addRow(new Object[]{
                         r.getRideId(),
                         driverName,
@@ -1224,7 +1351,8 @@ public class CampusRideUI {
                         r.getDate(),
                         r.getDepartureTime(),
                         r.getAvailableSeats(),
-                        String.format("%.2f", r.getCostPerPerson())
+                        String.format("%.2f", r.getCostPerPerson()),
+                        notes
                 });
             }
         });
@@ -1232,24 +1360,12 @@ public class CampusRideUI {
         bookSelectedBtn.addActionListener(e -> {
             int row = table.getSelectedRow();
             if (row == -1) {
-                JOptionPane.showMessageDialog(mainFrame, "Select a ride to book.", "Notice", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(mainFrame, "Please select a ride from the table to request.", "Notice", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
             String rideId = (String) searchResultsModel.getValueAt(row, 0);
-            try {
-                boolean success = rideService.bookRide(rideId);
-                if (success) {
-                    fileService.saveAllRides(rideService.getRides());
-                    JOptionPane.showMessageDialog(mainFrame, "Seat booked successfully for Ride " + rideId + "!", "Booked", JOptionPane.INFORMATION_MESSAGE);
-                    Ride updated = rideService.findRideById(rideId);
-                    if (updated != null) {
-                        searchResultsModel.setValueAt(updated.getAvailableSeats(), row, 6);
-                    }
-                }
-            } catch (RideNotFoundException | InvalidRideException ex) {
-                JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Booking Error", JOptionPane.ERROR_MESSAGE);
-            }
+            handleRequestRideAction(rideId);
         });
 
         tableActions.add(bookSelectedBtn);
@@ -1265,12 +1381,12 @@ public class CampusRideUI {
     }
 
     // =========================================================================
-    // SCREEN 7: My Rides Screen
+    // SCREEN 7: My Rides Screen (Driver Offers, Incoming Approvals, Passenger Requests)
     // =========================================================================
     private JPanel createMyRidesPanel() {
-        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        JPanel contentPanel = new JPanel(new BorderLayout(14, 14));
         contentPanel.setBackground(COLOR_CREAM);
-        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
+        contentPanel.setBorder(new EmptyBorder(18, 22, 18, 22));
 
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
@@ -1279,11 +1395,11 @@ public class CampusRideUI {
         titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
         titles.setOpaque(false);
 
-        JLabel title = new JLabel("Rides Offered by You");
+        JLabel title = new JLabel("My Rides & Passenger Requests");
         title.setFont(new Font("Segoe UI", Font.BOLD, 22));
         title.setForeground(COLOR_FOREST_GREEN);
 
-        JLabel sub = new JLabel("View and monitor rides you have published as a driver");
+        JLabel sub = new JLabel("Manage rides offered by you, review approvals, and track your submitted ride requests");
         sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         sub.setForeground(COLOR_MUTED_TEXT);
 
@@ -1297,37 +1413,364 @@ public class CampusRideUI {
         header.add(backBtn, BorderLayout.EAST);
         contentPanel.add(header, BorderLayout.NORTH);
 
-        String[] cols = {"Ride ID", "From", "To", "Date", "Departure Time", "Seats Left", "Fare ($)"};
-        myRidesModel = new DefaultTableModel(cols, 0) {
+        // Modern 3-Tab Interface
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabbedPane.setBackground(COLOR_IVORY_CARD);
+        tabbedPane.setForeground(COLOR_FOREST_GREEN);
+
+        // -------------------------------------------------------------
+        // TAB 1: Rides Offered by You (Driver View)
+        // -------------------------------------------------------------
+        JPanel tabOffered = new JPanel(new BorderLayout(10, 10));
+        tabOffered.setBackground(COLOR_IVORY_CARD);
+        tabOffered.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDER, 1),
+                new EmptyBorder(12, 14, 12, 14)
+        ));
+
+        JLabel offeredTitle = new JLabel("Rides Offered by You (Driver Listings)");
+        offeredTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        offeredTitle.setForeground(COLOR_FOREST_GREEN);
+        tabOffered.add(offeredTitle, BorderLayout.NORTH);
+
+        String[] colsOffered = {"Ride ID", "From", "To", "Date", "Departure Time", "Seats Left", "Fare ($)", "Notes"};
+        myRidesModel = new DefaultTableModel(colsOffered, 0) {
             @Override
             public boolean isCellEditable(int row, int col) { return false; }
         };
+        JTable tableOffered = new JTable(myRidesModel);
+        styleTable(tableOffered);
+        JScrollPane scrollOffered = new JScrollPane(tableOffered);
+        scrollOffered.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollOffered.getViewport().setBackground(COLOR_IVORY_CARD);
+        tabOffered.add(scrollOffered, BorderLayout.CENTER);
 
-        JTable table = new JTable(myRidesModel);
-        styleTable(table);
-        JScrollPane scrollPane = new JScrollPane(table);
-        scrollPane.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
-        scrollPane.getViewport().setBackground(COLOR_IVORY_CARD);
+        JPanel offeredActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        offeredActions.setOpaque(false);
 
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        bottom.setOpaque(false);
-        JButton refreshBtn = createSecondaryButton("Refresh Rides");
-        refreshBtn.addActionListener(e -> refreshMyRides());
-        bottom.add(refreshBtn);
+        JButton refreshOfferedBtn = createOutlineButton("⟳ Refresh Rides");
+        refreshOfferedBtn.addActionListener(e -> refreshMyRides());
 
-        contentPanel.add(scrollPane, BorderLayout.CENTER);
-        contentPanel.add(bottom, BorderLayout.SOUTH);
+        JButton cancelRideBtn = createDangerButton("✕ Cancel Selected Ride");
+        cancelRideBtn.addActionListener(e -> {
+            int row = tableOffered.getSelectedRow();
+            if (row == -1) {
+                JOptionPane.showMessageDialog(mainFrame, "Please select an offered ride to cancel.", "Selection Required", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
 
+            String rideId = (String) myRidesModel.getValueAt(row, 0);
+            int confirm = JOptionPane.showConfirmDialog(mainFrame,
+                    "Are you sure you want to cancel Ride ID: " + rideId + "?\nThis will remove it from active campus listings.",
+                    "Confirm Cancellation", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (confirm != JOptionPane.YES_OPTION) return;
+
+            cancelRideBtn.setEnabled(false);
+            cancelRideBtn.setText("Cancelling...");
+
+            Student current = authService.getCurrentLoggedInStudent();
+            String driverId = (current != null && current.getId() != null && !current.getId().isEmpty())
+                    ? current.getId() : (current != null ? current.getStudentId() : null);
+
+            SwingWorker<Boolean, Void> cancelWorker = new SwingWorker<>() {
+                private String errMsg = null;
+                @Override
+                protected Boolean doInBackground() {
+                    try {
+                        boolean ok = rideService.cancelRide(rideId, driverId);
+                        if (ok) {
+                            fileService.saveAllRides(rideService.getRides());
+                        }
+                        return ok;
+                    } catch (Exception ex) {
+                        errMsg = ex.getMessage();
+                        return false;
+                    }
+                }
+
+                @Override
+                protected void done() {
+                    cancelRideBtn.setEnabled(true);
+                    cancelRideBtn.setText("✕ Cancel Selected Ride");
+                    try {
+                        if (get()) {
+                            JOptionPane.showMessageDialog(mainFrame, "Ride " + rideId + " has been cancelled.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                            refreshMyRides();
+                            refreshDashboard();
+                        } else {
+                            JOptionPane.showMessageDialog(mainFrame, errMsg != null ? errMsg : "Could not cancel ride.", "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(mainFrame, "Cancellation error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            };
+            cancelWorker.execute();
+        });
+
+        offeredActions.add(refreshOfferedBtn);
+        offeredActions.add(cancelRideBtn);
+        tabOffered.add(offeredActions, BorderLayout.SOUTH);
+
+        // -------------------------------------------------------------
+        // TAB 2: Incoming Passenger Requests (Driver Approvals)
+        // -------------------------------------------------------------
+        JPanel tabIncoming = new JPanel(new BorderLayout(10, 10));
+        tabIncoming.setBackground(COLOR_IVORY_CARD);
+        tabIncoming.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDER, 1),
+                new EmptyBorder(12, 14, 12, 14)
+        ));
+
+        JPanel reqHeader = new JPanel(new BorderLayout());
+        reqHeader.setOpaque(false);
+
+        JLabel reqTitle = new JLabel("Incoming Passenger Requests (Driver Approvals)");
+        reqTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        reqTitle.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel reqSub = new JLabel("Approve or decline requests. Confirmed pickup & drop-off locations are shown below.");
+        reqSub.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        reqSub.setForeground(COLOR_MUTED_TEXT);
+
+        JPanel reqTitleBox = new JPanel();
+        reqTitleBox.setLayout(new BoxLayout(reqTitleBox, BoxLayout.Y_AXIS));
+        reqTitleBox.setOpaque(false);
+        reqTitleBox.add(reqTitle);
+        reqTitleBox.add(reqSub);
+        reqHeader.add(reqTitleBox, BorderLayout.WEST);
+        tabIncoming.add(reqHeader, BorderLayout.NORTH);
+
+        String[] colsReq = {"Request ID", "Ride ID", "Requester Name", "Student ID", "Pickup Location", "Drop-off", "Seats", "Status", "Requested At"};
+        incomingRequestsModel = new DefaultTableModel(colsReq, 0) {
+            @Override
+            public boolean isCellEditable(int row, int col) { return false; }
+        };
+        JTable tableReq = new JTable(incomingRequestsModel);
+        styleTable(tableReq);
+        JScrollPane scrollReq = new JScrollPane(tableReq);
+        scrollReq.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollReq.getViewport().setBackground(COLOR_IVORY_CARD);
+        tabIncoming.add(scrollReq, BorderLayout.CENTER);
+
+        JPanel reqActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        reqActions.setOpaque(false);
+
+        JButton refreshReqBtn = createOutlineButton("⟳ Refresh");
+        refreshReqBtn.addActionListener(e -> refreshMyRides());
+
+        JButton declineBtn = createSecondaryButton("✕ Decline Request");
+        declineBtn.addActionListener(e -> {
+            int row = tableReq.getSelectedRow();
+            if (row == -1) {
+                JOptionPane.showMessageDialog(mainFrame, "Please select an incoming request from the table to decline.", "Selection Required", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String reqId = (String) incomingRequestsModel.getValueAt(row, 0);
+            String status = (String) incomingRequestsModel.getValueAt(row, 7);
+            if (!"PENDING".equalsIgnoreCase(status)) {
+                JOptionPane.showMessageDialog(mainFrame, "Only PENDING requests can be declined (current: " + status + ").", "Notice", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            int confirm = JOptionPane.showConfirmDialog(mainFrame, "Are you sure you want to decline request " + reqId + "?", "Confirm Decline", JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) return;
+
+            declineBtn.setEnabled(false);
+            declineBtn.setText("Declining...");
+
+            SwingWorker<Boolean, Void> declineWorker = new SwingWorker<>() {
+                private String errMsg = null;
+                @Override
+                protected Boolean doInBackground() {
+                    try {
+                        return rideService.declineRequest(reqId);
+                    } catch (Exception ex) {
+                        errMsg = ex.getMessage();
+                        return false;
+                    }
+                }
+
+                @Override
+                protected void done() {
+                    declineBtn.setEnabled(true);
+                    declineBtn.setText("✕ Decline Request");
+                    try {
+                        if (get()) {
+                            JOptionPane.showMessageDialog(mainFrame, "Passenger request was declined.", "Request Declined", JOptionPane.INFORMATION_MESSAGE);
+                            refreshMyRides();
+                            refreshDashboard();
+                        } else {
+                            JOptionPane.showMessageDialog(mainFrame, errMsg != null ? errMsg : "Action failed", "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(mainFrame, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            };
+            declineWorker.execute();
+        });
+
+        JButton acceptBtn = createPrimaryButton("✓ Accept Request");
+        acceptBtn.addActionListener(e -> {
+            int row = tableReq.getSelectedRow();
+            if (row == -1) {
+                JOptionPane.showMessageDialog(mainFrame, "Please select an incoming request from the table to accept.", "Selection Required", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String reqId = (String) incomingRequestsModel.getValueAt(row, 0);
+            String status = (String) incomingRequestsModel.getValueAt(row, 7);
+            if (!"PENDING".equalsIgnoreCase(status)) {
+                JOptionPane.showMessageDialog(mainFrame, "Only PENDING requests can be accepted (current: " + status + ").", "Notice", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            acceptBtn.setEnabled(false);
+            acceptBtn.setText("Accepting...");
+
+            SwingWorker<Boolean, Void> acceptWorker = new SwingWorker<>() {
+                private String errMsg = null;
+                @Override
+                protected Boolean doInBackground() {
+                    try {
+                        boolean ok = rideService.acceptRequest(reqId);
+                        if (ok) {
+                            fileService.saveAllRides(rideService.getRides());
+                        }
+                        return ok;
+                    } catch (Exception ex) {
+                        errMsg = ex.getMessage();
+                        return false;
+                    }
+                }
+
+                @Override
+                protected void done() {
+                    acceptBtn.setEnabled(true);
+                    acceptBtn.setText("✓ Accept Request");
+                    try {
+                        if (get()) {
+                            JOptionPane.showMessageDialog(mainFrame,
+                                    "Passenger request accepted successfully!\n"
+                                    + "Seats have been updated and confirmed in Supabase.",
+                                    "Request Accepted", JOptionPane.INFORMATION_MESSAGE);
+                            refreshMyRides();
+                            refreshDashboard();
+                        } else {
+                            JOptionPane.showMessageDialog(mainFrame, errMsg != null ? errMsg : "Action failed", "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(mainFrame, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            };
+            acceptWorker.execute();
+        });
+
+        reqActions.add(refreshReqBtn);
+        reqActions.add(declineBtn);
+        reqActions.add(acceptBtn);
+        tabIncoming.add(reqActions, BorderLayout.SOUTH);
+
+        // -------------------------------------------------------------
+        // TAB 3: My Submitted Requests (Passenger View)
+        // -------------------------------------------------------------
+        JPanel tabSubmitted = new JPanel(new BorderLayout(10, 10));
+        tabSubmitted.setBackground(COLOR_IVORY_CARD);
+        tabSubmitted.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDER, 1),
+                new EmptyBorder(12, 14, 12, 14)
+        ));
+
+        JPanel subHeader = new JPanel(new BorderLayout());
+        subHeader.setOpaque(false);
+
+        JLabel subTitle = new JLabel("My Submitted Requests (Passenger View)");
+        subTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        subTitle.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel subHelp = new JLabel("Track status (Pending, Accepted, Declined) and view confirmed pickup / drop-off locations");
+        subHelp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        subHelp.setForeground(COLOR_MUTED_TEXT);
+
+        JPanel subTitleBox = new JPanel();
+        subTitleBox.setLayout(new BoxLayout(subTitleBox, BoxLayout.Y_AXIS));
+        subTitleBox.setOpaque(false);
+        subTitleBox.add(subTitle);
+        subTitleBox.add(subHelp);
+        subHeader.add(subTitleBox, BorderLayout.WEST);
+        tabSubmitted.add(subHeader, BorderLayout.NORTH);
+
+        String[] colsSub = {"Request ID", "Ride ID", "Driver", "Pickup Location", "Drop-off", "Seats", "Status", "Requested At"};
+        mySubmittedRequestsModel = new DefaultTableModel(colsSub, 0) {
+            @Override
+            public boolean isCellEditable(int row, int col) { return false; }
+        };
+        JTable tableSub = new JTable(mySubmittedRequestsModel);
+        styleTable(tableSub);
+        JScrollPane scrollSub = new JScrollPane(tableSub);
+        scrollSub.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollSub.getViewport().setBackground(COLOR_IVORY_CARD);
+        tabSubmitted.add(scrollSub, BorderLayout.CENTER);
+
+        JPanel subActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        subActions.setOpaque(false);
+
+        JButton refreshSubBtn = createOutlineButton("⟳ Refresh Status");
+        refreshSubBtn.addActionListener(e -> refreshMyRides());
+        subActions.add(refreshSubBtn);
+        tabSubmitted.add(subActions, BorderLayout.SOUTH);
+
+        // Add all 3 tabs
+        tabbedPane.addTab("🚘 Rides Offered (Driver)", tabOffered);
+        tabbedPane.addTab("📥 Incoming Requests (Driver Approvals)", tabIncoming);
+        tabbedPane.addTab("📋 My Requests (Passenger Tracking)", tabSubmitted);
+
+        contentPanel.add(tabbedPane, BorderLayout.CENTER);
         return createAuthenticatedLayout(SCREEN_MY_RIDES, contentPanel);
     }
 
     private void refreshMyRides() {
-        myRidesModel.setRowCount(0);
         Student current = authService.getCurrentLoggedInStudent();
         if (current == null) return;
 
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                rideService.syncRidesFromSupabase();
+                rideService.syncRequestsFromSupabase(current);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                populateMyRidesTables(current);
+            }
+        };
+        worker.execute();
+    }
+
+    private void populateMyRidesTables(Student current) {
+        if (current == null) return;
+
+        // 1. Populate rides offered by current driver
+        myRidesModel.setRowCount(0);
         ArrayList<Ride> userRides = rideService.getRidesByDriver(current.getStudentId());
+        for (Ride r : rideService.getRides()) {
+            if (r.getDriver() != null) {
+                boolean match = (current.getId() != null && current.getId().equalsIgnoreCase(r.getDriver().getId()))
+                        || (current.getStudentId() != null && current.getStudentId().equalsIgnoreCase(r.getDriver().getStudentId()));
+                if (match && !userRides.contains(r)) {
+                    userRides.add(r);
+                }
+            }
+        }
+
         for (Ride r : userRides) {
+            String notes = (r.getNotes() != null && !r.getNotes().isEmpty()) ? r.getNotes() : "-";
             myRidesModel.addRow(new Object[]{
                     r.getRideId(),
                     r.getStartingLocation(),
@@ -1335,9 +1778,429 @@ public class CampusRideUI {
                     r.getDate(),
                     r.getDepartureTime(),
                     r.getAvailableSeats(),
-                    String.format("%.2f", r.getCostPerPerson())
+                    String.format("%.2f", r.getCostPerPerson()),
+                    notes
             });
         }
+
+        // 2. Populate incoming passenger requests for current driver
+        if (incomingRequestsModel != null) {
+            incomingRequestsModel.setRowCount(0);
+            String driverIdentifier = (current.getId() != null && !current.getId().trim().isEmpty())
+                    ? current.getId()
+                    : current.getStudentId();
+            ArrayList<RideRequest> incoming = rideService.getRequestsForDriver(driverIdentifier);
+
+            if (current.getId() != null && !current.getId().trim().isEmpty()) {
+                ArrayList<RideRequest> extra = rideService.getRequestsForDriver(current.getStudentId());
+                for (RideRequest req : extra) {
+                    if (!incoming.contains(req)) {
+                        incoming.add(req);
+                    }
+                }
+            }
+
+            int pendingCount = 0;
+            for (RideRequest req : incoming) {
+                if (req.isPending()) pendingCount++;
+                String reqName = (req.getRequester() != null && req.getRequester().getName() != null)
+                        ? req.getRequester().getName() : "Student";
+                String reqRoll = (req.getRequester() != null && req.getRequester().getStudentId() != null)
+                        ? req.getRequester().getStudentId() : (req.getRequesterId() != null ? req.getRequesterId() : "N/A");
+                String pickup = (req.getPickupLocation() != null && !req.getPickupLocation().isEmpty())
+                        ? req.getPickupLocation() : "-";
+                String dropoff = (req.getDropoffLocation() != null && !req.getDropoffLocation().isEmpty())
+                        ? req.getDropoffLocation() : "-";
+                String created = (req.getCreatedAt() != null) ? req.getCreatedAt() : "Recent";
+
+                incomingRequestsModel.addRow(new Object[]{
+                        req.getRequestId(),
+                        req.getRideId(),
+                        reqName,
+                        reqRoll,
+                        pickup,
+                        dropoff,
+                        req.getSeatsRequested(),
+                        req.getStatus(),
+                        created
+                });
+            }
+
+            if (statPendingRequestsLabel != null) {
+                statPendingRequestsLabel.setText(pendingCount + (pendingCount == 1 ? " Pending" : " Pending"));
+                statPendingRequestsLabel.setForeground(pendingCount > 0 ? COLOR_WARNING : COLOR_SUCCESS);
+            }
+        }
+
+        // 3. Populate submitted requests (Passenger View)
+        if (mySubmittedRequestsModel != null) {
+            mySubmittedRequestsModel.setRowCount(0);
+            String requesterIdentifier = (current.getId() != null && !current.getId().trim().isEmpty())
+                    ? current.getId()
+                    : current.getStudentId();
+            ArrayList<RideRequest> myReqs = rideService.getRequestsByRequester(requesterIdentifier);
+
+            if (current.getId() != null && !current.getId().trim().isEmpty()) {
+                ArrayList<RideRequest> extra = rideService.getRequestsByRequester(current.getStudentId());
+                for (RideRequest req : extra) {
+                    if (!myReqs.contains(req)) {
+                        myReqs.add(req);
+                    }
+                }
+            }
+
+            for (RideRequest req : myReqs) {
+                String driverName = "Driver";
+                try {
+                    Ride r = rideService.findRideById(req.getRideId());
+                    if (r.getDriver() != null && r.getDriver().getName() != null) {
+                        driverName = r.getDriver().getName();
+                    }
+                } catch (Exception ignored) {}
+
+                String pickup = (req.getPickupLocation() != null && !req.getPickupLocation().isEmpty())
+                        ? req.getPickupLocation() : "-";
+                String dropoff = (req.getDropoffLocation() != null && !req.getDropoffLocation().isEmpty())
+                        ? req.getDropoffLocation() : "-";
+                String created = (req.getCreatedAt() != null) ? req.getCreatedAt() : "Recent";
+
+                mySubmittedRequestsModel.addRow(new Object[]{
+                        req.getRequestId(),
+                        req.getRideId(),
+                        driverName,
+                        pickup,
+                        dropoff,
+                        req.getSeatsRequested(),
+                        req.getStatus(),
+                        created
+                });
+            }
+        }
+    }
+
+    /**
+     * Handles modal dialog for requesting a ride seat with custom pickup location.
+     */
+    private void handleRequestRideAction(String rideId) {
+        Student currentStudent = authService.getCurrentLoggedInStudent();
+        if (currentStudent == null) {
+            JOptionPane.showMessageDialog(mainFrame, "Please log in to request a ride seat.", "Login Required", JOptionPane.WARNING_MESSAGE);
+            showScreen(SCREEN_LOGIN);
+            return;
+        }
+
+        Ride ride;
+        try {
+            ride = rideService.findRideById(rideId);
+        } catch (RideNotFoundException ex) {
+            JOptionPane.showMessageDialog(mainFrame, "Ride not found: " + rideId, "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (ride.getDriver() != null) {
+            boolean sameUuid = currentStudent.getId() != null && !currentStudent.getId().isEmpty()
+                    && currentStudent.getId().equalsIgnoreCase(ride.getDriver().getId());
+            boolean sameReg = currentStudent.getStudentId() != null
+                    && currentStudent.getStudentId().equalsIgnoreCase(ride.getDriver().getStudentId());
+            if (sameUuid || sameReg) {
+                JOptionPane.showMessageDialog(mainFrame, "You cannot request your own offered ride.", "Self-Request Prevented", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        }
+
+        if (ride.getAvailableSeats() <= 0) {
+            JOptionPane.showMessageDialog(mainFrame, "This ride has no available seats remaining.", "Ride Full", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Modal dialog
+        JDialog dialog = new JDialog(mainFrame, "Request Seat - Ride " + ride.getRideId().substring(0, Math.min(8, ride.getRideId().length())), true);
+        dialog.setSize(520, 480);
+        dialog.setLocationRelativeTo(mainFrame);
+        dialog.setResizable(false);
+
+        JPanel dialogPanel = new JPanel(new BorderLayout(14, 14));
+        dialogPanel.setBackground(COLOR_CREAM);
+        dialogPanel.setBorder(new EmptyBorder(18, 22, 18, 22));
+
+        JPanel topPanel = new JPanel();
+        topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
+        topPanel.setOpaque(false);
+
+        JLabel dlgTitle = new JLabel("Reserve Your Seat");
+        dlgTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        dlgTitle.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel dlgSub = new JLabel("Route: " + ride.getStartingLocation() + "  ➔  " + ride.getDestination());
+        dlgSub.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        dlgSub.setForeground(COLOR_MAIN_TEXT);
+
+        JLabel dlgInfo = new JLabel("Date: " + ride.getDate() + " | Time: " + ride.getDepartureTime() + " | Fare: $" + String.format("%.2f", ride.getCostPerPerson()));
+        dlgInfo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        dlgInfo.setForeground(COLOR_MUTED_TEXT);
+
+        topPanel.add(dlgTitle);
+        topPanel.add(Box.createVerticalStrut(4));
+        topPanel.add(dlgSub);
+        topPanel.add(Box.createVerticalStrut(2));
+        topPanel.add(dlgInfo);
+        dialogPanel.add(topPanel, BorderLayout.NORTH);
+
+        JPanel formCard = createCardPanel(460, 260);
+        formCard.setLayout(new GridLayout(5, 2, 10, 10));
+
+        JTextField pickupField = createStyledTextField();
+        pickupField.setText(ride.getStartingLocation());
+
+        JLabel dropoffDisplay = new JLabel(ride.getDestination());
+        dropoffDisplay.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        dropoffDisplay.setForeground(COLOR_MAIN_TEXT);
+
+        int maxSeats = Math.max(1, Math.min(ride.getAvailableSeats(), 6));
+        Integer[] seatOptions = new Integer[maxSeats];
+        for (int i = 0; i < maxSeats; i++) seatOptions[i] = i + 1;
+        JComboBox<Integer> seatsCombo = new JComboBox<>(seatOptions);
+        seatsCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+
+        JLabel driverDisplay = new JLabel(ride.getDriver() != null && ride.getDriver().getName() != null ? ride.getDriver().getName() : "Student Driver");
+        driverDisplay.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+
+        JLabel seatsAvailableDisplay = new JLabel(ride.getAvailableSeats() + " seats available");
+        seatsAvailableDisplay.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        seatsAvailableDisplay.setForeground(COLOR_SUCCESS);
+
+        formCard.add(createFormLabel("Driver:"));
+        formCard.add(driverDisplay);
+        formCard.add(createFormLabel("Available Capacity:"));
+        formCard.add(seatsAvailableDisplay);
+        formCard.add(createFormLabel("Your Pickup Location:"));
+        formCard.add(pickupField);
+        formCard.add(createFormLabel("Drop-off Location:"));
+        formCard.add(dropoffDisplay);
+        formCard.add(createFormLabel("Seats to Reserve:"));
+        formCard.add(seatsCombo);
+
+        dialogPanel.add(formCard, BorderLayout.CENTER);
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        btnRow.setOpaque(false);
+
+        JButton cancelDlgBtn = createOutlineButton("Cancel");
+        cancelDlgBtn.addActionListener(e -> dialog.dispose());
+
+        JButton submitDlgBtn = createPrimaryButton("Submit Request");
+        submitDlgBtn.addActionListener(e -> {
+            String pickup = pickupField.getText().trim();
+            if (pickup.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please enter a pickup location.", "Validation", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int seats = (Integer) seatsCombo.getSelectedItem();
+
+            submitDlgBtn.setEnabled(false);
+            submitDlgBtn.setText("Submitting...");
+
+            SwingWorker<Boolean, Void> reqWorker = new SwingWorker<>() {
+                private String errorMsg = null;
+
+                @Override
+                protected Boolean doInBackground() {
+                    try {
+                        boolean ok = rideService.requestRide(rideId, currentStudent, seats, pickup);
+                        if (ok) {
+                            fileService.saveAllRides(rideService.getRides());
+                        }
+                        return ok;
+                    } catch (Exception ex) {
+                        errorMsg = ex.getMessage();
+                        return false;
+                    }
+                }
+
+                @Override
+                protected void done() {
+                    submitDlgBtn.setEnabled(true);
+                    submitDlgBtn.setText("Submit Request");
+                    try {
+                        boolean ok = get();
+                        if (ok) {
+                            dialog.dispose();
+                            JOptionPane.showMessageDialog(mainFrame,
+                                    "Your ride request has been submitted to the driver!\n\n"
+                                    + "Pickup: " + pickup + "\n"
+                                    + "Drop-off: " + ride.getDestination() + "\n"
+                                    + "Seats Requested: " + seats + "\n"
+                                    + "Status: PENDING\n\n"
+                                    + "The driver will review and approve your reservation in 'My Rides'.",
+                                    "Request Submitted Successfully", JOptionPane.INFORMATION_MESSAGE);
+                            refreshDashboard();
+                            refreshMyRides();
+                        } else {
+                            JOptionPane.showMessageDialog(dialog, errorMsg != null ? errorMsg : "Request could not be submitted.", "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(dialog, "Failed to submit request: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            };
+            reqWorker.execute();
+        });
+
+        btnRow.add(cancelDlgBtn);
+        btnRow.add(submitDlgBtn);
+        dialogPanel.add(btnRow, BorderLayout.SOUTH);
+
+        dialog.setContentPane(dialogPanel);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Opens modal dialog calculating Petrol and Shared Ride Cost.
+     */
+    private void showPetrolCostEstimatorDialog(JTextField targetPriceField) {
+        JDialog dialog = new JDialog(mainFrame, "CampusRide — Petrol & Trip Cost Estimator", true);
+        dialog.setSize(540, 520);
+        dialog.setLocationRelativeTo(mainFrame);
+        dialog.setResizable(false);
+
+        JPanel panel = new JPanel(new BorderLayout(14, 14));
+        panel.setBackground(COLOR_CREAM);
+        panel.setBorder(new EmptyBorder(18, 22, 18, 22));
+
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setOpaque(false);
+
+        JLabel title = new JLabel("⛽ Petrol & Shared Cost Estimator");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        title.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel sub = new JLabel("Calculate fair fuel expense: Cost = (Distance / Mileage) × Fuel Price");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setForeground(COLOR_MUTED_TEXT);
+
+        header.add(title);
+        header.add(Box.createVerticalStrut(3));
+        header.add(sub);
+        panel.add(header, BorderLayout.NORTH);
+
+        JPanel inputsCard = createCardPanel(480, 220);
+        inputsCard.setLayout(new GridLayout(4, 2, 12, 10));
+
+        JTextField distField = createStyledTextField();
+        distField.setText("25.0");
+        JTextField mileageField = createStyledTextField();
+        mileageField.setText("15.0");
+        JTextField fuelPriceField = createStyledTextField();
+        fuelPriceField.setText("105.0");
+        JTextField peopleField = createStyledTextField();
+        peopleField.setText("3");
+
+        inputsCard.add(createFormLabel("Estimated Distance (km):"));
+        inputsCard.add(distField);
+        inputsCard.add(createFormLabel("Vehicle Mileage (km/Litre):"));
+        inputsCard.add(mileageField);
+        inputsCard.add(createFormLabel("Petrol Price per Litre ($/₹):"));
+        inputsCard.add(fuelPriceField);
+        inputsCard.add(createFormLabel("Number of People Sharing:"));
+        inputsCard.add(peopleField);
+
+        JPanel resultBox = new JPanel();
+        resultBox.setLayout(new BoxLayout(resultBox, BoxLayout.Y_AXIS));
+        resultBox.setBackground(COLOR_IVORY_CARD);
+        resultBox.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDER, 1),
+                new EmptyBorder(12, 14, 12, 14)
+        ));
+
+        JLabel totalCostLabel = new JLabel("Estimated Petrol Cost: ₹ 175.00");
+        totalCostLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        totalCostLabel.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel perPersonLabel = new JLabel("Cost Per Person (Estimate): ₹ 58.33");
+        perPersonLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        perPersonLabel.setForeground(COLOR_DEEP_GREEN);
+
+        JLabel formulaLabel = new JLabel("Formula: (25.0 km / 15.0 km/L) × ₹105.00 = ₹175.00 total");
+        formulaLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        formulaLabel.setForeground(COLOR_MUTED_TEXT);
+
+        JLabel disclaimerLabel = new JLabel("⚠️ Note: Approximate estimate for student cost-sharing only.");
+        disclaimerLabel.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        disclaimerLabel.setForeground(COLOR_MUTED_TEXT);
+
+        resultBox.add(totalCostLabel);
+        resultBox.add(Box.createVerticalStrut(4));
+        resultBox.add(perPersonLabel);
+        resultBox.add(Box.createVerticalStrut(4));
+        resultBox.add(formulaLabel);
+        resultBox.add(Box.createVerticalStrut(4));
+        resultBox.add(disclaimerLabel);
+
+        JPanel centerContainer = new JPanel();
+        centerContainer.setLayout(new BoxLayout(centerContainer, BoxLayout.Y_AXIS));
+        centerContainer.setOpaque(false);
+        centerContainer.add(inputsCard);
+        centerContainer.add(Box.createVerticalStrut(10));
+        centerContainer.add(resultBox);
+        panel.add(centerContainer, BorderLayout.CENTER);
+
+        Runnable calculate = () -> {
+            try {
+                double dist = Double.parseDouble(distField.getText().trim());
+                double mileage = Double.parseDouble(mileageField.getText().trim());
+                double price = Double.parseDouble(fuelPriceField.getText().trim());
+                int people = Integer.parseInt(peopleField.getText().trim());
+
+                if (dist <= 0 || mileage <= 0 || price <= 0 || people <= 0) {
+                    JOptionPane.showMessageDialog(dialog, "Please enter positive numbers greater than zero.", "Invalid Input", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                double totalCost = (dist / mileage) * price;
+                double perPerson = totalCost / people;
+
+                totalCostLabel.setText(String.format("Estimated Petrol Cost: ₹ %.2f", totalCost));
+                perPersonLabel.setText(String.format("Cost Per Person (Estimate): ₹ %.2f", perPerson));
+                formulaLabel.setText(String.format("Formula: (%.1f km / %.1f km/L) × ₹%.2f = ₹%.2f total", dist, mileage, price, totalCost));
+            } catch (NumberFormatException nfe) {
+                JOptionPane.showMessageDialog(dialog, "Please enter valid numeric values in all fields.", "Numeric Error", JOptionPane.ERROR_MESSAGE);
+            }
+        };
+
+        JButton calcBtn = createSecondaryButton("Calculate");
+        calcBtn.addActionListener(e -> calculate.run());
+
+        JButton closeBtn = createOutlineButton("Close");
+        closeBtn.addActionListener(e -> dialog.dispose());
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        actions.setOpaque(false);
+        actions.add(calcBtn);
+
+        if (targetPriceField != null) {
+            JButton applyBtn = createPrimaryButton("Apply to Ride Fare ($/₹)");
+            applyBtn.addActionListener(e -> {
+                try {
+                    double dist = Double.parseDouble(distField.getText().trim());
+                    double mileage = Double.parseDouble(mileageField.getText().trim());
+                    double price = Double.parseDouble(fuelPriceField.getText().trim());
+                    int people = Integer.parseInt(peopleField.getText().trim());
+                    double perPerson = ((dist / mileage) * price) / people;
+                    targetPriceField.setText(String.format("%.2f", perPerson));
+                    dialog.dispose();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Calculate valid cost before applying.", "Error", JOptionPane.WARNING_MESSAGE);
+                }
+            });
+            actions.add(applyBtn);
+        }
+
+        actions.add(closeBtn);
+        panel.add(actions, BorderLayout.SOUTH);
+
+        dialog.setContentPane(panel);
+        dialog.setVisible(true);
     }
 
     // =========================================================================

@@ -21,6 +21,12 @@ public class Driver extends Student {
         this.vehicle = vehicle;
     }
 
+    // Parameterized constructor including Supabase user UUID
+    public Driver(String id, String name, String studentId, String email, String password, Vehicle vehicle) {
+        super(id, name, studentId, email, password);
+        this.vehicle = vehicle;
+    }
+
     // Getter and Setter
     public Vehicle getVehicle() {
         return vehicle;

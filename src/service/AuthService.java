@@ -117,8 +117,12 @@ public class AuthService {
             throw new InvalidLoginException("Registration failed: Did not receive user UUID from Supabase Auth.");
         }
 
+        // Set the confirmed Supabase Auth UUID on the registered student model
+        student.setId(userUuid.trim());
+
         // 7. Collections Framework: Add to in-memory ArrayList cache without plaintext password
         Student inMemoryStudent = new Student(name, regNum, email, "");
+        inMemoryStudent.setId(userUuid.trim());
         students.add(inMemoryStudent);
 
         System.out.println("Registration successful! Supabase Auth user created (" + userUuid
@@ -184,6 +188,14 @@ public class AuthService {
         }
         if (student == null) {
             student = new Student("NSSCE Student", "NSSCE", normalizedEmail, "");
+        }
+
+        // Safely map UUID from Supabase Auth session if not already populated
+        if (student.getId() == null || student.getId().trim().isEmpty()) {
+            String authUuid = supabaseClient.getCurrentUserId();
+            if (authUuid != null && !authUuid.trim().isEmpty()) {
+                student.setId(authUuid.trim());
+            }
         }
 
         // 7. Update in-memory session and cache

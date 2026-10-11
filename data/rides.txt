@@ -2,3 +2,4 @@
 RIDE-101,Palakkad,Kozhikode,2026-12-06,10,0,150.0,Abiraj T M,25B130,25b130@nssce.ac.in,Abiyeyy,1,KL49 4652,2
 RIDE-102,Akathethara,lulu mall,2026-10-11,08:30 AM,0,20.0,Abhay,25b169,25b169@nssce.ac.in,,Bike,KL-09-AB-1234,4
 RIDE-103,Akathethara,Townstand,2026-10-15,08:30 AM,0,20.0,CHANDANADAS M,25B1006,25b1006@nssce.ac.in,,Bike,KL-09-AB-1234,1
+75af9c7c-1b45-4bcf-a2d3-e1c499d58716,Colony,Stadium,2026-10-15,08:30 AM,1,58.33,CHANDANADAS M,25B1006,25b1006@nssce.ac.in,,Car,KL-09-AB-1234,4

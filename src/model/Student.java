@@ -22,6 +22,12 @@ public class Student extends User implements Authenticatable {
         this.password = password;
     }
 
+    // Parameterized constructor including Supabase user UUID
+    public Student(String id, String name, String studentId, String email, String password) {
+        super(id, name, studentId, email);
+        this.password = password;
+    }
+
     // Getter and Setter
     public String getPassword() {
         return password;

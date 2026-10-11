@@ -88,7 +88,7 @@ public class SupabaseStudentRepository {
     }
 
     /**
-     * Retrieves a student by email from public.students.
+     * Retrieves a student by email from public.students and extracts the Supabase Auth UUID.
      */
     public Student findStudentByEmail(String email) {
         if (email == null || email.trim().isEmpty()) return null;
@@ -98,6 +98,7 @@ public class SupabaseStudentRepository {
             String path = "students?email=eq." + encoded + "&select=*";
             String response = client.executeRest(path, "GET", null);
             if (response != null && response.contains("\"email\"")) {
+                String id = SupabaseClient.extractField(response, "id");
                 String fullName = SupabaseClient.extractField(response, "full_name");
                 if (fullName == null) fullName = SupabaseClient.extractField(response, "name");
 
@@ -105,7 +106,11 @@ public class SupabaseStudentRepository {
                 if (regNum == null) regNum = SupabaseClient.extractField(response, "student_id");
 
                 String mail = SupabaseClient.extractField(response, "email");
-                return new Student(fullName, regNum, mail, "");
+                Student student = new Student(fullName, regNum, mail, "");
+                if (id != null && !id.trim().isEmpty()) {
+                    student.setId(id.trim());
+                }
+                return student;
             }
         } catch (Exception e) {
             System.out.println("Supabase: Student query note: " + e.getMessage());
@@ -124,6 +129,9 @@ public class SupabaseStudentRepository {
             String path = "students?id=eq." + encoded + "&select=*";
             String response = client.executeRest(path, "GET", null);
             if (response != null && response.contains("\"email\"")) {
+                String id = SupabaseClient.extractField(response, "id");
+                if (id == null || id.trim().isEmpty()) id = userId.trim();
+
                 String fullName = SupabaseClient.extractField(response, "full_name");
                 if (fullName == null) fullName = SupabaseClient.extractField(response, "name");
 
@@ -131,7 +139,9 @@ public class SupabaseStudentRepository {
                 if (regNum == null) regNum = SupabaseClient.extractField(response, "student_id");
 
                 String mail = SupabaseClient.extractField(response, "email");
-                return new Student(fullName, regNum, mail, "");
+                Student student = new Student(fullName, regNum, mail, "");
+                student.setId(id);
+                return student;
             }
         } catch (Exception e) {
             System.out.println("Supabase: Student query by id note: " + e.getMessage());

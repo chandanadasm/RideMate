@@ -15,6 +15,7 @@ public class Ride {
     private String departureTime;
     private int availableSeats;
     private double costPerPerson;
+    private String notes;
 
     // Default constructor
     public Ride() {
@@ -23,6 +24,12 @@ public class Ride {
     // Parameterized constructor
     public Ride(String rideId, Driver driver, String startingLocation, String destination,
                 String date, String departureTime, int availableSeats, double costPerPerson) {
+        this(rideId, driver, startingLocation, destination, date, departureTime, availableSeats, costPerPerson, "");
+    }
+
+    // Parameterized constructor with optional notes
+    public Ride(String rideId, Driver driver, String startingLocation, String destination,
+                String date, String departureTime, int availableSeats, double costPerPerson, String notes) {
         this.rideId = rideId;
         this.driver = driver;
         this.startingLocation = startingLocation;
@@ -31,6 +38,7 @@ public class Ride {
         this.departureTime = departureTime;
         this.availableSeats = availableSeats;
         this.costPerPerson = costPerPerson;
+        this.notes = (notes != null) ? notes.trim() : "";
     }
 
     // Displays details of this ride
@@ -118,5 +126,13 @@ public class Ride {
 
     public void setCostPerPerson(double costPerPerson) {
         this.costPerPerson = costPerPerson;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
     }
 }
