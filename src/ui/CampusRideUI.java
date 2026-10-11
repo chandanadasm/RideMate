@@ -15,20 +15,35 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
 import java.awt.*;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Presentation Layer: Modern Java Swing Graphical User Interface for CampusRide.
+ * Presentation Layer: Modern Java Swing Graphical User Interface for RouteMate / CampusRide.
+ *
+ * Design System:
+ * - Forest Green:  #163D32 (Primary branding & primary buttons)
+ * - Deep Green:    #102F27 (Sidebar background & gradient dark stop)
+ * - Rich Forest:   #1A473A (Gradient light stop)
+ * - Warm Cream:    #F7F3E8 (Main dashboard backdrop)
+ * - Ivory:         #FFFDF7 (Elevated rounded card panels)
+ * - Sage Green:    #A8BDA5 (Secondary accents, borders & badges)
+ * - Sage Button:   #CFE0CC (High-contrast secondary button background)
+ * - Deep Forest:   #20352D (High-contrast readable body text)
+ * - Muted Slate:   #4A5850 (Captions and secondary labels)
+ * - Subtle Border: #E2E5D9 (Clean card and field outlines)
  *
  * Architecture:
  * - Swing UI handles presentation, layout, and user interactions.
  * - Does NOT contain business logic directly in event handlers.
  * - Delegates all business logic strictly to AuthService and RideService.
- * - Demonstrates CardLayout navigation between all 8 required application screens.
- *
- * Architecture Flow:
- * Swing UI -> Service Layer (AuthService, RideService) -> Model Layer (Student, Driver, Ride) -> Supabase Data Layer
+ * - CardLayout navigation manages all 8 application screens with unified navigation.
  */
 public class CampusRideUI {
 
@@ -41,6 +56,29 @@ public class CampusRideUI {
     public static final String SCREEN_SEARCH_RIDE = "SCREEN_SEARCH_RIDE";
     public static final String SCREEN_MY_RIDES = "SCREEN_MY_RIDES";
     public static final String SCREEN_PROFILE = "SCREEN_PROFILE";
+
+    // RouteMate / CampusRide Theme Color Palette
+    public static final Color COLOR_FOREST_GREEN = new Color(0x16, 0x3D, 0x32); // #163D32 Primary Dark Green
+    public static final Color COLOR_DEEP_GREEN   = new Color(0x10, 0x2F, 0x27); // #102F27 Deep Green
+    public static final Color COLOR_RICH_FOREST  = new Color(0x1A, 0x47, 0x3A); // #1A473A Gradient Light Stop
+    public static final Color COLOR_CREAM        = new Color(0xF7, 0xF3, 0xE8); // #F7F3E8 Warm Cream Background
+    public static final Color COLOR_IVORY_CARD   = new Color(0xFF, 0xFD, 0xF7); // #FFFDF7 Ivory Card Surface
+    public static final Color COLOR_SAGE_GREEN   = new Color(0xA8, 0xBD, 0xA5); // #A8BDA5 Sage Green Accent
+    public static final Color COLOR_SAGE_ACCENT  = new Color(0xCF, 0xE0, 0xCC); // #CFE0CC Sage Button Background
+    public static final Color COLOR_MAIN_TEXT    = new Color(0x20, 0x35, 0x2D); // #20352D High-contrast Deep Forest Text
+    public static final Color COLOR_MUTED_TEXT   = new Color(0x4A, 0x58, 0x50); // #4A5850 High-contrast Muted Text
+    public static final Color COLOR_BORDER       = new Color(0xE2, 0xE5, 0xD9); // #E2E5D9 Subtle Warm Border
+
+    // Extended UI State Colors
+    public static final Color COLOR_HOVER_GREEN    = new Color(0x1F, 0x52, 0x44); // Primary button hover state
+    public static final Color COLOR_SIDEBAR_ACTIVE = new Color(0x1D, 0x4A, 0x3E); // Active navigation item
+    public static final Color COLOR_SIDEBAR_HOVER  = new Color(0x16, 0x3D, 0x32); // Inactive navigation hover
+    public static final Color COLOR_DANGER         = new Color(0x99, 0x1B, 0x1B); // High-contrast Crimson Red
+    public static final Color COLOR_DANGER_HOVER   = new Color(0xB9, 0x1C, 0x1C); // Danger hover
+    public static final Color COLOR_SUCCESS        = new Color(0x15, 0x80, 0x3D); // Success green
+    public static final Color COLOR_SUCCESS_BG     = new Color(0xF0, 0xFD, 0xF4); // Success badge background
+    public static final Color COLOR_WARNING        = new Color(0xB4, 0x53, 0x09); // Warning amber
+    public static final Color COLOR_WARNING_BG     = new Color(0xFF, 0xFB, 0xEB); // Warning badge background
 
     // Application Services
     private final AuthService authService;
@@ -56,9 +94,12 @@ public class CampusRideUI {
     private String pendingVerificationEmail = "";
     private JTextField loginEmailField;
 
-    // Dashboard dynamic labels
+    // Dashboard dynamic labels & summary metrics
     private JLabel dashboardGreetingLabel;
     private DefaultTableModel dashboardRidesModel;
+    private JLabel statAvailableCountLabel;
+    private JLabel statMyRidesCountLabel;
+    private JLabel statVerificationBadgeLabel;
 
     // Search & My Rides Table Models
     private DefaultTableModel searchResultsModel;
@@ -74,6 +115,10 @@ public class CampusRideUI {
     // Verification screen dynamic label
     private JLabel verifyTargetEmailLabel;
     private JLabel verifyStatusBadgeLabel;
+
+    // Synchronized sidebar user labels across screens
+    private final List<JLabel> sidebarUserLabels = new ArrayList<>();
+    private final List<JLabel> sidebarEmailLabels = new ArrayList<>();
 
     public CampusRideUI() {
         this.authService = new AuthService();
@@ -105,15 +150,15 @@ public class CampusRideUI {
      * Configures the main application window and CardLayout card deck.
      */
     private void initFrame() {
-        mainFrame = new JFrame("CampusRide - NSSCE College Ride Sharing System");
+        mainFrame = new JFrame("RouteMate - NSSCE College Ride Sharing System");
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        mainFrame.setSize(950, 680);
-        mainFrame.setMinimumSize(new Dimension(850, 600));
+        mainFrame.setSize(1040, 720);
+        mainFrame.setMinimumSize(new Dimension(920, 640));
         mainFrame.setLocationRelativeTo(null);
 
         cardLayout = new CardLayout();
         mainContainer = new JPanel(cardLayout);
-        mainContainer.setBackground(new Color(248, 250, 252));
+        mainContainer.setBackground(COLOR_CREAM);
 
         // Register each required screen panel
         mainContainer.add(createLoginPanel(), SCREEN_LOGIN);
@@ -129,6 +174,7 @@ public class CampusRideUI {
     }
 
     public void showScreen(String screenName) {
+        updateSidebarUserInfo();
         if (SCREEN_DASHBOARD.equals(screenName)) {
             refreshDashboard();
         } else if (SCREEN_MY_RIDES.equals(screenName)) {
@@ -141,54 +187,266 @@ public class CampusRideUI {
         cardLayout.show(mainContainer, screenName);
     }
 
+    /**
+     * Keeps all sidebar student names and email labels updated with the active session.
+     */
+    private void updateSidebarUserInfo() {
+        Student current = authService.getCurrentLoggedInStudent();
+        String name = (current != null) ? current.getName() : "Student";
+        String email = (current != null) ? current.getEmail() : "@nssce.ac.in";
+        for (JLabel lbl : sidebarUserLabels) {
+            lbl.setText(name);
+        }
+        for (JLabel lbl : sidebarEmailLabels) {
+            lbl.setText(email);
+        }
+    }
+
+    /**
+     * Creates a subtle forest-green ambient gradient background for auth screens.
+     */
+    private JPanel createGradientBackdropPanel() {
+        return new JPanel(new GridBagLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // Deep green to rich forest gradient
+                GradientPaint gp = new GradientPaint(
+                        0, 0, COLOR_DEEP_GREEN,
+                        0, getHeight(), COLOR_RICH_FOREST
+                );
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+
+                // Soft ambient sage aura behind the centered card
+                g2.setColor(new Color(0xA8, 0xBD, 0xA5, 22));
+                int cx = getWidth() / 2;
+                int cy = getHeight() / 2;
+                g2.fillOval(cx - 320, cy - 320, 640, 640);
+                g2.dispose();
+            }
+        };
+    }
+
     // =========================================================================
-    // SCREEN 1: Welcome & Login Screen
+    // SIDEBAR & AUTHENTICATED SCREEN LAYOUT HELPER
+    // =========================================================================
+    private JPanel createAuthenticatedLayout(String activeScreen, JComponent content) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(COLOR_CREAM);
+        wrapper.add(createSidebar(activeScreen), BorderLayout.WEST);
+        wrapper.add(content, BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private JPanel createSidebar(String activeScreen) {
+        JPanel sidebar = new JPanel();
+        sidebar.setLayout(new BorderLayout());
+        sidebar.setPreferredSize(new Dimension(230, 0));
+        sidebar.setBackground(COLOR_DEEP_GREEN);
+        sidebar.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, new Color(0x1B, 0x45, 0x39)));
+
+        // Top Brand Header
+        JPanel brandPanel = new JPanel();
+        brandPanel.setLayout(new BoxLayout(brandPanel, BoxLayout.Y_AXIS));
+        brandPanel.setOpaque(false);
+        brandPanel.setBorder(new EmptyBorder(26, 20, 20, 20));
+
+        JLabel logoBadge = new JLabel("RouteMate");
+        logoBadge.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        logoBadge.setForeground(COLOR_IVORY_CARD);
+        logoBadge.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel logoSubtitle = new JLabel("Campus Rides • NSSCE");
+        logoSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        logoSubtitle.setForeground(COLOR_SAGE_GREEN);
+        logoSubtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        brandPanel.add(logoBadge);
+        brandPanel.add(Box.createVerticalStrut(4));
+        brandPanel.add(logoSubtitle);
+
+        // Navigation Menu Panel
+        JPanel menuPanel = new JPanel();
+        menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));
+        menuPanel.setOpaque(false);
+        menuPanel.setBorder(new EmptyBorder(10, 12, 10, 12));
+
+        menuPanel.add(createSidebarNavButton("Dashboard", SCREEN_DASHBOARD, activeScreen));
+        menuPanel.add(Box.createVerticalStrut(6));
+        menuPanel.add(createSidebarNavButton("Find Rides", SCREEN_SEARCH_RIDE, activeScreen));
+        menuPanel.add(Box.createVerticalStrut(6));
+        menuPanel.add(createSidebarNavButton("Offer a Ride", SCREEN_OFFER_RIDE, activeScreen));
+        menuPanel.add(Box.createVerticalStrut(6));
+        menuPanel.add(createSidebarNavButton("My Rides", SCREEN_MY_RIDES, activeScreen));
+        menuPanel.add(Box.createVerticalStrut(6));
+        menuPanel.add(createSidebarNavButton("Profile", SCREEN_PROFILE, activeScreen));
+
+        // Bottom User Info & Logout
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
+        bottomPanel.setOpaque(false);
+        bottomPanel.setBorder(new EmptyBorder(16, 16, 20, 16));
+
+        JPanel userCard = new JPanel(new BorderLayout(8, 2));
+        userCard.setOpaque(false);
+        userCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(0x1B, 0x45, 0x39)),
+                new EmptyBorder(12, 4, 12, 4)
+        ));
+
+        JLabel userNameLbl = new JLabel("Student");
+        userNameLbl.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        userNameLbl.setForeground(COLOR_IVORY_CARD);
+        sidebarUserLabels.add(userNameLbl);
+
+        JLabel userEmailLbl = new JLabel("@nssce.ac.in");
+        userEmailLbl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        userEmailLbl.setForeground(COLOR_SAGE_GREEN);
+        sidebarEmailLabels.add(userEmailLbl);
+
+        JPanel userTextPanel = new JPanel();
+        userTextPanel.setLayout(new BoxLayout(userTextPanel, BoxLayout.Y_AXIS));
+        userTextPanel.setOpaque(false);
+        userTextPanel.add(userNameLbl);
+        userTextPanel.add(Box.createVerticalStrut(2));
+        userTextPanel.add(userEmailLbl);
+
+        userCard.add(userTextPanel, BorderLayout.CENTER);
+
+        JButton logoutBtn = createDangerButton("Logout");
+        logoutBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        logoutBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        logoutBtn.addActionListener(e -> handleLogout());
+
+        bottomPanel.add(userCard);
+        bottomPanel.add(Box.createVerticalStrut(8));
+        bottomPanel.add(logoutBtn);
+
+        sidebar.add(brandPanel, BorderLayout.NORTH);
+        sidebar.add(menuPanel, BorderLayout.CENTER);
+        sidebar.add(bottomPanel, BorderLayout.SOUTH);
+
+        return sidebar;
+    }
+
+    private JButton createSidebarNavButton(String title, String targetScreen, String activeScreen) {
+        boolean isActive = targetScreen.equals(activeScreen);
+        JButton btn = new JButton(title) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 6, 6);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("Segoe UI", isActive ? Font.BOLD : Font.PLAIN, 13));
+        btn.setForeground(isActive ? COLOR_IVORY_CARD : new Color(0xD0, 0xDC, 0xCE));
+        btn.setBackground(isActive ? COLOR_SIDEBAR_ACTIVE : COLOR_DEEP_GREEN);
+        btn.setHorizontalAlignment(SwingConstants.LEFT);
+        btn.setFocusPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        btn.setPreferredSize(new Dimension(200, 40));
+
+        if (isActive) {
+            btn.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 4, 0, 0, COLOR_SAGE_GREEN),
+                    new EmptyBorder(8, 14, 8, 14)
+            ));
+        } else {
+            btn.setBorder(new EmptyBorder(8, 18, 8, 14));
+            btn.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    btn.setBackground(COLOR_SIDEBAR_HOVER);
+                    btn.setForeground(COLOR_IVORY_CARD);
+                    btn.repaint();
+                }
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    btn.setBackground(COLOR_DEEP_GREEN);
+                    btn.setForeground(new Color(0xD0, 0xDC, 0xCE));
+                    btn.repaint();
+                }
+            });
+        }
+
+        btn.addActionListener(e -> showScreen(targetScreen));
+        return btn;
+    }
+
+    // =========================================================================
+    // SCREEN 1: Welcome & Login Screen (Premium Gradient Backdrop & Ivory Card)
     // =========================================================================
     private JPanel createLoginPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(new Color(241, 245, 249));
+        // Subtle deep forest gradient background that complements the dashboard
+        JPanel panel = createGradientBackdropPanel();
 
-        JPanel card = createCardPanel(420, 480);
+        // Elegant centered Ivory form card
+        JPanel card = createCardPanel(450, 540);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel("CampusRide");
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 28));
-        titleLabel.setForeground(new Color(15, 23, 42));
+        // RouteMate Brand Pill Badge
+        JLabel tagBadge = new JLabel("🌱  NSSCE RIDE SHARING");
+        tagBadge.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        tagBadge.setForeground(COLOR_FOREST_GREEN);
+        tagBadge.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel brandBadge = new JLabel("RouteMate");
+        brandBadge.setFont(new Font("Segoe UI", Font.BOLD, 30));
+        brandBadge.setForeground(COLOR_FOREST_GREEN);
+        brandBadge.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel titleLabel = new JLabel("Campus Rides, Made Easier");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(COLOR_MAIN_TEXT);
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel subtitleLabel = new JLabel("NSS College of Engineering Ride Sharing");
-        subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        subtitleLabel.setForeground(new Color(100, 116, 139));
+        JLabel subtitleLabel = new JLabel("Safe, convenient & sustainable college travel");
+        subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        subtitleLabel.setForeground(COLOR_MUTED_TEXT);
         subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JLabel emailLabel = new JLabel("College Email (@nssce.ac.in):");
         emailLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        emailLabel.setForeground(COLOR_MAIN_TEXT);
         emailLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         loginEmailField = createStyledTextField();
-        loginEmailField.setMaximumSize(new Dimension(360, 36));
+        loginEmailField.setMaximumSize(new Dimension(390, 38));
 
         JLabel passLabel = new JLabel("Password:");
         passLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        passLabel.setForeground(COLOR_MAIN_TEXT);
         passLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPasswordField passField = new JPasswordField();
-        passField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        passField.setMaximumSize(new Dimension(360, 36));
+        JPasswordField passField = createStyledPasswordField();
+        passField.setMaximumSize(new Dimension(390, 38));
 
+        // High-contrast, explicitly painted buttons
         JButton loginButton = createPrimaryButton("Login to Account");
-        loginButton.setMaximumSize(new Dimension(360, 40));
+        loginButton.setMaximumSize(new Dimension(390, 42));
         loginButton.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JButton registerButton = createSecondaryButton("Create New Account");
-        registerButton.setMaximumSize(new Dimension(360, 36));
+        registerButton.setMaximumSize(new Dimension(390, 38));
         registerButton.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JButton verifyStatusButton = createOutlineButton("Check Email Verification Status");
-        verifyStatusButton.setMaximumSize(new Dimension(360, 32));
+        verifyStatusButton.setMaximumSize(new Dimension(390, 36));
         verifyStatusButton.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Event: Login Action (Delegates to AuthService)
+        // Event: Login Action (Delegates strictly to AuthService)
         loginButton.addActionListener(e -> {
             String email = loginEmailField.getText().trim();
             String password = new String(passField.getPassword()).trim();
@@ -210,7 +468,6 @@ public class CampusRideUI {
                     showScreen(SCREEN_DASHBOARD);
                 }
             } catch (InvalidLoginException ex) {
-                // Check if the issue was email verification
                 if (ex.getMessage().contains("verify your college email")) {
                     pendingVerificationEmail = email;
                     int opt = JOptionPane.showConfirmDialog(mainFrame,
@@ -236,15 +493,19 @@ public class CampusRideUI {
         });
 
         // Assemble Card
-        card.add(Box.createVerticalStrut(15));
-        card.add(titleLabel);
+        card.add(Box.createVerticalStrut(6));
+        card.add(tagBadge);
         card.add(Box.createVerticalStrut(4));
+        card.add(brandBadge);
+        card.add(Box.createVerticalStrut(4));
+        card.add(titleLabel);
+        card.add(Box.createVerticalStrut(2));
         card.add(subtitleLabel);
-        card.add(Box.createVerticalStrut(25));
+        card.add(Box.createVerticalStrut(22));
         card.add(emailLabel);
         card.add(Box.createVerticalStrut(5));
         card.add(loginEmailField);
-        card.add(Box.createVerticalStrut(15));
+        card.add(Box.createVerticalStrut(14));
         card.add(passLabel);
         card.add(Box.createVerticalStrut(5));
         card.add(passField);
@@ -254,7 +515,7 @@ public class CampusRideUI {
         card.add(registerButton);
         card.add(Box.createVerticalStrut(8));
         card.add(verifyStatusButton);
-        card.add(Box.createVerticalStrut(15));
+        card.add(Box.createVerticalStrut(10));
 
         panel.add(card);
         return panel;
@@ -264,41 +525,35 @@ public class CampusRideUI {
     // SCREEN 2: Registration Screen
     // =========================================================================
     private JPanel createRegisterPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(new Color(241, 245, 249));
+        JPanel panel = createGradientBackdropPanel();
 
-        JPanel card = createCardPanel(460, 620);
+        JPanel card = createCardPanel(490, 640);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 
         JLabel titleLabel = new JLabel("Create NSSCE Account");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        titleLabel.setForeground(new Color(15, 23, 42));
+        titleLabel.setForeground(COLOR_FOREST_GREEN);
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JLabel noticeLabel = new JLabel("Official domain: only @nssce.ac.in emails accepted");
-        noticeLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-        noticeLabel.setForeground(new Color(13, 148, 136));
+        noticeLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        noticeLabel.setForeground(COLOR_SUCCESS);
         noticeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JTextField nameField = createStyledTextField();
         JTextField regNumField = createStyledTextField();
         JTextField emailField = createStyledTextField();
-        JPasswordField passField = new JPasswordField();
-        passField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        passField.setMaximumSize(new Dimension(400, 36));
-        JPasswordField confirmPassField = new JPasswordField();
-        confirmPassField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        confirmPassField.setMaximumSize(new Dimension(400, 36));
+        JPasswordField passField = createStyledPasswordField();
+        JPasswordField confirmPassField = createStyledPasswordField();
 
         JButton registerBtn = createPrimaryButton("Register Account");
-        registerBtn.setMaximumSize(new Dimension(400, 40));
+        registerBtn.setMaximumSize(new Dimension(420, 40));
         registerBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton backBtn = createOutlineButton("← Back to Login");
-        backBtn.setMaximumSize(new Dimension(400, 32));
+        JButton backBtn = createSecondaryButton("← Back to Login");
+        backBtn.setMaximumSize(new Dimension(420, 36));
         backBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Registration Event Handler
         registerBtn.addActionListener(e -> {
             String name = nameField.getText().trim();
             String regNum = regNumField.getText().trim();
@@ -306,13 +561,11 @@ public class CampusRideUI {
             String password = new String(passField.getPassword()).trim();
             String confirmPassword = new String(confirmPassField.getPassword()).trim();
 
-            // 1. Validate all fields
             if (name.isEmpty() || regNum.isEmpty() || email.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
                 JOptionPane.showMessageDialog(mainFrame, "All fields are required. Please fill in all fields.", "Missing Information", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
-            // 2. Validate email ends with @nssce.ac.in (case-insensitive)
             if (!email.toLowerCase().endsWith("@nssce.ac.in")) {
                 JOptionPane.showMessageDialog(mainFrame,
                         "Only @nssce.ac.in college email addresses are allowed.",
@@ -320,7 +573,6 @@ public class CampusRideUI {
                 return;
             }
 
-            // 3. Validate password and confirm password match
             if (!password.equals(confirmPassword)) {
                 JOptionPane.showMessageDialog(mainFrame,
                         "Passwords do not match. Please re-enter your password.",
@@ -338,13 +590,9 @@ public class CampusRideUI {
             Student newStudent = new Student(name, regNum, email, password);
 
             try {
-                // 4, 5, 6. Call Supabase Auth signup (public.students profile is created automatically by on_auth_user_created trigger)
                 boolean success = authService.registerStudent(newStudent);
                 if (success) {
-                    // Academic file handling demonstration persistence
                     fileService.saveStudent(newStudent);
-
-                    // 7 & 8. Clear success notification
                     pendingVerificationEmail = email;
                     JOptionPane.showMessageDialog(mainFrame,
                             "Registration successful. Please verify your college email before logging in.",
@@ -356,14 +604,12 @@ public class CampusRideUI {
                     passField.setText("");
                     confirmPassField.setText("");
 
-                    // 9. Return user to Login screen with email prefilled
                     if (loginEmailField != null) {
                         loginEmailField.setText(email);
                     }
                     showScreen(SCREEN_LOGIN);
                 }
             } catch (InvalidLoginException ex) {
-                // Do not display fake registration success if Supabase operation failed
                 JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Registration Error", JOptionPane.ERROR_MESSAGE);
             }
         });
@@ -374,7 +620,7 @@ public class CampusRideUI {
         card.add(titleLabel);
         card.add(Box.createVerticalStrut(4));
         card.add(noticeLabel);
-        card.add(Box.createVerticalStrut(18));
+        card.add(Box.createVerticalStrut(16));
 
         addFormField(card, "Full Name:", nameField);
         addFormField(card, "Registration Number:", regNumField);
@@ -396,25 +642,29 @@ public class CampusRideUI {
     // SCREEN 3: Email Verification Status Screen
     // =========================================================================
     private JPanel createVerifyPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(new Color(241, 245, 249));
+        JPanel panel = createGradientBackdropPanel();
 
-        JPanel card = createCardPanel(480, 500);
+        JPanel card = createCardPanel(500, 500);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 
         JLabel titleLabel = new JLabel("College Email Verification");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        titleLabel.setForeground(new Color(15, 23, 42));
+        titleLabel.setForeground(COLOR_FOREST_GREEN);
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
+        JLabel subtitleLabel = new JLabel("NSSCE Student Account Security");
+        subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        subtitleLabel.setForeground(COLOR_MUTED_TEXT);
+        subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
         verifyTargetEmailLabel = new JLabel("Email: None selected");
-        verifyTargetEmailLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        verifyTargetEmailLabel.setForeground(new Color(71, 85, 105));
+        verifyTargetEmailLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        verifyTargetEmailLabel.setForeground(COLOR_MAIN_TEXT);
         verifyTargetEmailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        verifyStatusBadgeLabel = new JLabel("STATUS: PENDING VERIFICATION");
+        verifyStatusBadgeLabel = new JLabel("STATUS: PENDING VERIFICATION ⏳");
         verifyStatusBadgeLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        verifyStatusBadgeLabel.setForeground(new Color(217, 119, 6));
+        verifyStatusBadgeLabel.setForeground(COLOR_WARNING);
         verifyStatusBadgeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JTextArea infoText = new JTextArea("A confirmation link was dispatched to your @nssce.ac.in inbox via Supabase Auth.\n\n"
@@ -424,7 +674,7 @@ public class CampusRideUI {
         infoText.setOpaque(false);
         infoText.setEditable(false);
         infoText.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        infoText.setForeground(new Color(100, 116, 139));
+        infoText.setForeground(COLOR_MUTED_TEXT);
         infoText.setMaximumSize(new Dimension(420, 70));
         infoText.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -436,8 +686,8 @@ public class CampusRideUI {
         simulateVerifyBtn.setMaximumSize(new Dimension(420, 36));
         simulateVerifyBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton toLoginBtn = createOutlineButton("Go to Login Screen");
-        toLoginBtn.setMaximumSize(new Dimension(420, 32));
+        JButton toLoginBtn = createOutlineButton("← Go to Login Screen");
+        toLoginBtn.setMaximumSize(new Dimension(420, 36));
         toLoginBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         checkStatusBtn.addActionListener(e -> {
@@ -452,11 +702,11 @@ public class CampusRideUI {
                 boolean verified = authService.isEmailVerified(pendingVerificationEmail);
                 if (verified) {
                     verifyStatusBadgeLabel.setText("STATUS: VERIFIED ✔");
-                    verifyStatusBadgeLabel.setForeground(new Color(16, 185, 129));
+                    verifyStatusBadgeLabel.setForeground(COLOR_SUCCESS);
                     JOptionPane.showMessageDialog(mainFrame, "Your email is verified! You can now log in.", "Email Verified", JOptionPane.INFORMATION_MESSAGE);
                 } else {
                     verifyStatusBadgeLabel.setText("STATUS: PENDING VERIFICATION ⏳");
-                    verifyStatusBadgeLabel.setForeground(new Color(217, 119, 6));
+                    verifyStatusBadgeLabel.setForeground(COLOR_WARNING);
                     JOptionPane.showMessageDialog(mainFrame, "Verification is still pending. Please click the link sent to your college email.", "Pending", JOptionPane.WARNING_MESSAGE);
                 }
             }
@@ -473,28 +723,30 @@ public class CampusRideUI {
             if (!pendingVerificationEmail.isEmpty()) {
                 authService.markEmailAsVerified(pendingVerificationEmail);
                 verifyStatusBadgeLabel.setText("STATUS: VERIFIED ✔");
-                verifyStatusBadgeLabel.setForeground(new Color(16, 185, 129));
+                verifyStatusBadgeLabel.setForeground(COLOR_SUCCESS);
                 JOptionPane.showMessageDialog(mainFrame, "Success! " + pendingVerificationEmail + " marked as verified.", "Verification Simulated", JOptionPane.INFORMATION_MESSAGE);
             }
         });
 
         toLoginBtn.addActionListener(e -> showScreen(SCREEN_LOGIN));
 
-        card.add(Box.createVerticalStrut(15));
+        card.add(Box.createVerticalStrut(12));
         card.add(titleLabel);
-        card.add(Box.createVerticalStrut(10));
+        card.add(Box.createVerticalStrut(4));
+        card.add(subtitleLabel);
+        card.add(Box.createVerticalStrut(12));
         card.add(verifyTargetEmailLabel);
         card.add(Box.createVerticalStrut(8));
         card.add(verifyStatusBadgeLabel);
-        card.add(Box.createVerticalStrut(20));
+        card.add(Box.createVerticalStrut(18));
         card.add(infoText);
-        card.add(Box.createVerticalStrut(25));
+        card.add(Box.createVerticalStrut(22));
         card.add(checkStatusBtn);
         card.add(Box.createVerticalStrut(10));
         card.add(simulateVerifyBtn);
         card.add(Box.createVerticalStrut(10));
         card.add(toLoginBtn);
-        card.add(Box.createVerticalStrut(15));
+        card.add(Box.createVerticalStrut(12));
 
         panel.add(card);
         return panel;
@@ -506,10 +758,10 @@ public class CampusRideUI {
             boolean isV = authService.isEmailVerified(pendingVerificationEmail);
             if (isV) {
                 verifyStatusBadgeLabel.setText("STATUS: VERIFIED ✔");
-                verifyStatusBadgeLabel.setForeground(new Color(16, 185, 129));
+                verifyStatusBadgeLabel.setForeground(COLOR_SUCCESS);
             } else {
                 verifyStatusBadgeLabel.setText("STATUS: PENDING VERIFICATION ⏳");
-                verifyStatusBadgeLabel.setForeground(new Color(217, 119, 6));
+                verifyStatusBadgeLabel.setForeground(COLOR_WARNING);
             }
         }
     }
@@ -518,54 +770,94 @@ public class CampusRideUI {
     // SCREEN 4: Main Dashboard Screen
     // =========================================================================
     private JPanel createDashboardPanel() {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(new Color(248, 250, 252));
-        panel.setBorder(new EmptyBorder(20, 25, 20, 25));
+        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        contentPanel.setBackground(COLOR_CREAM);
+        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
 
-        // Top Navigation Bar
-        JPanel topBar = new JPanel(new BorderLayout());
-        topBar.setOpaque(false);
+        // North Header Section: Greeting, Subtitle and Action Button
+        JPanel headerSection = new JPanel();
+        headerSection.setLayout(new BoxLayout(headerSection, BoxLayout.Y_AXIS));
+        headerSection.setOpaque(false);
+
+        JPanel topRow = new JPanel(new BorderLayout());
+        topRow.setOpaque(false);
+
+        JPanel titleBlock = new JPanel();
+        titleBlock.setLayout(new BoxLayout(titleBlock, BoxLayout.Y_AXIS));
+        titleBlock.setOpaque(false);
+
+        JLabel mainHeading = new JLabel("Campus Rides, Made Easier");
+        mainHeading.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        mainHeading.setForeground(COLOR_FOREST_GREEN);
 
         dashboardGreetingLabel = new JLabel("Welcome back to CampusRide!");
-        dashboardGreetingLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        dashboardGreetingLabel.setForeground(new Color(15, 23, 42));
+        dashboardGreetingLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        dashboardGreetingLabel.setForeground(COLOR_MAIN_TEXT);
 
-        JPanel navButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        navButtons.setOpaque(false);
+        titleBlock.add(mainHeading);
+        titleBlock.add(Box.createVerticalStrut(4));
+        titleBlock.add(dashboardGreetingLabel);
 
-        JButton offerBtn = createPrimaryButton("+ Offer Ride");
-        JButton searchBtn = createSecondaryButton("Search Rides");
-        JButton myRidesBtn = createSecondaryButton("My Rides");
-        JButton profileBtn = createSecondaryButton("Profile");
-        JButton logoutBtn = createDangerButton("Logout");
+        JButton offerQuickBtn = createPrimaryButton("+ Offer a Ride");
+        offerQuickBtn.addActionListener(e -> showScreen(SCREEN_OFFER_RIDE));
 
-        offerBtn.addActionListener(e -> showScreen(SCREEN_OFFER_RIDE));
-        searchBtn.addActionListener(e -> showScreen(SCREEN_SEARCH_RIDE));
-        myRidesBtn.addActionListener(e -> showScreen(SCREEN_MY_RIDES));
-        profileBtn.addActionListener(e -> showScreen(SCREEN_PROFILE));
-        logoutBtn.addActionListener(e -> handleLogout());
+        topRow.add(titleBlock, BorderLayout.WEST);
+        topRow.add(offerQuickBtn, BorderLayout.EAST);
 
-        navButtons.add(offerBtn);
-        navButtons.add(searchBtn);
-        navButtons.add(myRidesBtn);
-        navButtons.add(profileBtn);
-        navButtons.add(logoutBtn);
+        headerSection.add(topRow);
+        headerSection.add(Box.createVerticalStrut(18));
 
-        topBar.add(dashboardGreetingLabel, BorderLayout.WEST);
-        topBar.add(navButtons, BorderLayout.EAST);
-        panel.add(topBar, BorderLayout.NORTH);
+        // Real Data Summary Cards (Zero fake statistics, strictly active counts)
+        JPanel statsRow = new JPanel(new GridLayout(1, 3, 14, 0));
+        statsRow.setOpaque(false);
 
-        // Center: Available Rides Table
-        JPanel tableContainer = new JPanel(new BorderLayout(5, 10));
-        tableContainer.setBackground(Color.WHITE);
-        tableContainer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
-                new EmptyBorder(15, 15, 15, 15)
-        ));
+        statAvailableCountLabel = new JLabel("0 Available");
+        statMyRidesCountLabel = new JLabel("0 Offered");
+        statVerificationBadgeLabel = new JLabel("Verified ✔");
+
+        statsRow.add(createStatCard("AVAILABLE CAMPUS RIDES", statAvailableCountLabel, "Active community listings"));
+        statsRow.add(createStatCard("MY POSTED RIDES", statMyRidesCountLabel, "Trips offered by you"));
+        statsRow.add(createStatCard("STUDENT STATUS", statVerificationBadgeLabel, "NSSCE Verified Student"));
+
+        headerSection.add(statsRow);
+        contentPanel.add(headerSection, BorderLayout.NORTH);
+
+        // Center: Available Rides Table in Ivory Card Container
+        JPanel tableContainer = new JPanel(new BorderLayout(8, 12)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(COLOR_IVORY_CARD);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.setColor(COLOR_BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        tableContainer.setOpaque(false);
+        tableContainer.setBorder(new EmptyBorder(16, 18, 16, 18));
+
+        JPanel tableHeaderPanel = new JPanel(new BorderLayout());
+        tableHeaderPanel.setOpaque(false);
 
         JLabel tableTitle = new JLabel("Available Campus Rides");
         tableTitle.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        tableTitle.setForeground(new Color(30, 41, 59));
+        tableTitle.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel tableSub = new JLabel("Browse route details, timings, fares and reserve your seat");
+        tableSub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        tableSub.setForeground(COLOR_MUTED_TEXT);
+
+        JPanel tableTitlesWrapper = new JPanel();
+        tableTitlesWrapper.setLayout(new BoxLayout(tableTitlesWrapper, BoxLayout.Y_AXIS));
+        tableTitlesWrapper.setOpaque(false);
+        tableTitlesWrapper.add(tableTitle);
+        tableTitlesWrapper.add(Box.createVerticalStrut(2));
+        tableTitlesWrapper.add(tableSub);
+
+        tableHeaderPanel.add(tableTitlesWrapper, BorderLayout.WEST);
 
         String[] cols = {"Ride ID", "Driver", "From", "To", "Date", "Time", "Seats Left", "Fare ($)"};
         dashboardRidesModel = new DefaultTableModel(cols, 0) {
@@ -576,8 +868,10 @@ public class CampusRideUI {
         JTable table = new JTable(dashboardRidesModel);
         styleTable(table);
         JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollPane.getViewport().setBackground(COLOR_IVORY_CARD);
 
-        JPanel tableBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel tableBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         tableBottom.setOpaque(false);
 
         JButton quickBookBtn = createPrimaryButton("Book Selected Ride");
@@ -590,7 +884,6 @@ public class CampusRideUI {
 
             String rideId = (String) dashboardRidesModel.getValueAt(selectedRow, 0);
             try {
-                // Delegate booking to RideService
                 boolean success = rideService.bookRide(rideId);
                 if (success) {
                     fileService.saveAllRides(rideService.getRides());
@@ -604,22 +897,30 @@ public class CampusRideUI {
 
         tableBottom.add(quickBookBtn);
 
-        tableContainer.add(tableTitle, BorderLayout.NORTH);
+        tableContainer.add(tableHeaderPanel, BorderLayout.NORTH);
         tableContainer.add(scrollPane, BorderLayout.CENTER);
         tableContainer.add(tableBottom, BorderLayout.SOUTH);
 
-        panel.add(tableContainer, BorderLayout.CENTER);
-        return panel;
+        contentPanel.add(tableContainer, BorderLayout.CENTER);
+
+        return createAuthenticatedLayout(SCREEN_DASHBOARD, contentPanel);
     }
 
     private void refreshDashboard() {
         Student current = authService.getCurrentLoggedInStudent();
         if (current != null) {
             dashboardGreetingLabel.setText("Welcome back, " + current.getName() + " (" + current.getStudentId() + ")");
+            int myCount = rideService.getRidesByDriver(current.getStudentId()).size();
+            statMyRidesCountLabel.setText(myCount + (myCount == 1 ? " Ride" : " Rides"));
+            boolean isV = authService.isEmailVerified(current.getEmail());
+            statVerificationBadgeLabel.setText(isV ? "Verified ✔" : "Pending ⏳");
+            statVerificationBadgeLabel.setForeground(isV ? COLOR_SUCCESS : COLOR_WARNING);
         }
 
         dashboardRidesModel.setRowCount(0);
         ArrayList<Ride> rides = rideService.getRides();
+        statAvailableCountLabel.setText(rides.size() + (rides.size() == 1 ? " Ride" : " Rides"));
+
         for (Ride r : rides) {
             String driverName = (r.getDriver() != null) ? r.getDriver().getName() : "N/A";
             dashboardRidesModel.addRow(new Object[]{
@@ -639,22 +940,38 @@ public class CampusRideUI {
     // SCREEN 5: Offer Ride Screen
     // =========================================================================
     private JPanel createOfferRidePanel() {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(new Color(248, 250, 252));
-        panel.setBorder(new EmptyBorder(20, 40, 20, 40));
+        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        contentPanel.setBackground(COLOR_CREAM);
+        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
 
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
+
+        JPanel titles = new JPanel();
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        titles.setOpaque(false);
+
         JLabel title = new JLabel("Offer a Campus Ride");
         title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        title.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel sub = new JLabel("Share empty seats and travel sustainably across NSSCE campus");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setForeground(COLOR_MUTED_TEXT);
+
+        titles.add(title);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(sub);
+
         JButton backBtn = createOutlineButton("← Back to Dashboard");
         backBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
-        header.add(title, BorderLayout.WEST);
-        header.add(backBtn, BorderLayout.EAST);
-        panel.add(header, BorderLayout.NORTH);
 
-        JPanel card = createCardPanel(600, 480);
-        card.setLayout(new GridLayout(9, 2, 10, 8));
+        header.add(titles, BorderLayout.WEST);
+        header.add(backBtn, BorderLayout.EAST);
+        contentPanel.add(header, BorderLayout.NORTH);
+
+        JPanel card = createCardPanel(640, 480);
+        card.setLayout(new GridLayout(9, 2, 14, 8));
 
         JTextField startLocField = createStyledTextField();
         JTextField destField = createStyledTextField();
@@ -665,6 +982,8 @@ public class CampusRideUI {
 
         JComboBox<String> vehicleTypeCombo = new JComboBox<>(new String[]{"Car", "Bike", "Scooter"});
         vehicleTypeCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        vehicleTypeCombo.setBackground(Color.WHITE);
+        vehicleTypeCombo.setForeground(COLOR_MAIN_TEXT);
 
         JTextField regNumField = createStyledTextField();
         regNumField.setText("KL-09-AB-1234");
@@ -675,29 +994,29 @@ public class CampusRideUI {
         JTextField costField = createStyledTextField();
         costField.setText("20.00");
 
-        card.add(new JLabel("Starting Location:"));
+        card.add(createFormLabel("Starting Location:"));
         card.add(startLocField);
-        card.add(new JLabel("Destination:"));
+        card.add(createFormLabel("Destination:"));
         card.add(destField);
-        card.add(new JLabel("Date (YYYY-MM-DD):"));
+        card.add(createFormLabel("Date (YYYY-MM-DD):"));
         card.add(dateField);
-        card.add(new JLabel("Departure Time:"));
+        card.add(createFormLabel("Departure Time:"));
         card.add(timeField);
-        card.add(new JLabel("Vehicle Type:"));
+        card.add(createFormLabel("Vehicle Type:"));
         card.add(vehicleTypeCombo);
-        card.add(new JLabel("Vehicle Reg Number:"));
+        card.add(createFormLabel("Vehicle Reg Number:"));
         card.add(regNumField);
-        card.add(new JLabel("Total Vehicle Capacity:"));
+        card.add(createFormLabel("Total Vehicle Capacity:"));
         card.add(capacityField);
-        card.add(new JLabel("Available Passenger Seats:"));
+        card.add(createFormLabel("Available Passenger Seats:"));
         card.add(seatsField);
-        card.add(new JLabel("Cost Per Person ($):"));
+        card.add(createFormLabel("Cost Per Person ($):"));
         card.add(costField);
 
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         bottomPanel.setOpaque(false);
         JButton publishBtn = createPrimaryButton("Publish Ride to CampusRide");
-        publishBtn.setPreferredSize(new Dimension(280, 40));
+        publishBtn.setPreferredSize(new Dimension(300, 42));
 
         publishBtn.addActionListener(e -> {
             Student currentStudent = authService.getCurrentLoggedInStudent();
@@ -725,7 +1044,6 @@ public class CampusRideUI {
 
                 String rideId = "RIDE-" + (rideService.getRides().size() + 101);
 
-                // OOP Concept: Aggregation & Multilevel Inheritance (Driver extends Student)
                 Vehicle vehicle = new Vehicle(vType, vNumber, capacity);
                 Driver driver = new Driver(
                         currentStudent.getName(),
@@ -736,11 +1054,7 @@ public class CampusRideUI {
                 );
 
                 Ride ride = new Ride(rideId, driver, startLoc, dest, date, time, availableSeats, cost);
-
-                // Business Service Layer
                 rideService.offerRide(ride);
-
-                // Academic file handling persistence
                 fileService.saveRide(ride);
 
                 JOptionPane.showMessageDialog(mainFrame, "Ride published successfully! ID: " + rideId, "Success", JOptionPane.INFORMATION_MESSAGE);
@@ -759,50 +1073,84 @@ public class CampusRideUI {
         centerWrapper.setOpaque(false);
         centerWrapper.add(card);
 
-        panel.add(centerWrapper, BorderLayout.CENTER);
-        panel.add(bottomPanel, BorderLayout.SOUTH);
-        return panel;
+        contentPanel.add(centerWrapper, BorderLayout.CENTER);
+        contentPanel.add(bottomPanel, BorderLayout.SOUTH);
+
+        return createAuthenticatedLayout(SCREEN_OFFER_RIDE, contentPanel);
+    }
+
+    private JLabel createFormLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        label.setForeground(COLOR_MAIN_TEXT);
+        return label;
     }
 
     // =========================================================================
-    // SCREEN 6: Search Ride Screen (Demonstrating Method Overloading)
+    // SCREEN 6: Search Ride Screen
     // =========================================================================
     private JPanel createSearchRidePanel() {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(new Color(248, 250, 252));
-        panel.setBorder(new EmptyBorder(20, 25, 20, 25));
+        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        contentPanel.setBackground(COLOR_CREAM);
+        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
 
-        // Header
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
+
+        JPanel titles = new JPanel();
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        titles.setOpaque(false);
+
         JLabel title = new JLabel("Search Available Campus Rides");
         title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        title.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel sub = new JLabel("Filter rides by starting location, destination or travel date");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setForeground(COLOR_MUTED_TEXT);
+
+        titles.add(title);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(sub);
+
         JButton backBtn = createOutlineButton("← Back to Dashboard");
         backBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
-        header.add(title, BorderLayout.WEST);
+        header.add(titles, BorderLayout.WEST);
         header.add(backBtn, BorderLayout.EAST);
-        panel.add(header, BorderLayout.NORTH);
+        contentPanel.add(header, BorderLayout.NORTH);
 
-        // Search Criteria Panel
-        JPanel filterCard = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
-        filterCard.setBackground(Color.WHITE);
-        filterCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
-                new EmptyBorder(10, 10, 10, 10)
-        ));
+        // Search Criteria Filter Card
+        JPanel filterCard = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 10)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(COLOR_IVORY_CARD);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                g2.setColor(COLOR_BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        filterCard.setOpaque(false);
+        filterCard.setBorder(new EmptyBorder(8, 12, 8, 12));
 
-        JTextField srcField = new JTextField(12);
-        JTextField dstField = new JTextField(12);
-        JTextField dateField = new JTextField(10);
+        JTextField srcField = createStyledTextField();
+        srcField.setColumns(12);
+        JTextField dstField = createStyledTextField();
+        dstField.setColumns(12);
+        JTextField dateField = createStyledTextField();
+        dateField.setColumns(10);
 
         JButton searchBtn = createPrimaryButton("Search Route");
         JButton showAllBtn = createSecondaryButton("Show All Rides");
 
-        filterCard.add(new JLabel("From:"));
+        filterCard.add(createFormLabel("From:"));
         filterCard.add(srcField);
-        filterCard.add(new JLabel("To:"));
+        filterCard.add(createFormLabel("To:"));
         filterCard.add(dstField);
-        filterCard.add(new JLabel("Date (Optional):"));
+        filterCard.add(createFormLabel("Date (Optional):"));
         filterCard.add(dateField);
         filterCard.add(searchBtn);
         filterCard.add(showAllBtn);
@@ -817,12 +1165,13 @@ public class CampusRideUI {
         JTable table = new JTable(searchResultsModel);
         styleTable(table);
         JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollPane.getViewport().setBackground(COLOR_IVORY_CARD);
 
-        JPanel tableActions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel tableActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         tableActions.setOpaque(false);
         JButton bookSelectedBtn = createPrimaryButton("Book Selected Ride");
 
-        // Event: Search Action (Calls Overloaded searchRide methods)
         searchBtn.addActionListener(e -> {
             String src = srcField.getText().trim();
             String dst = dstField.getText().trim();
@@ -836,14 +1185,11 @@ public class CampusRideUI {
             searchResultsModel.setRowCount(0);
             ArrayList<Ride> results;
 
-            // OOP Concept: Method Overloading execution
             if (!date.isEmpty()) {
-                // Signature 2: 3 parameters (source, destination, date)
-                rideService.searchRide(src, dst, date); // Call interface contract
+                rideService.searchRide(src, dst, date);
                 results = rideService.findRides(src, dst, date);
             } else {
-                // Signature 1: 2 parameters (source, destination)
-                rideService.searchRide(src, dst); // Call interface contract
+                rideService.searchRide(src, dst);
                 results = rideService.findRides(src, dst);
             }
 
@@ -896,9 +1242,10 @@ public class CampusRideUI {
                 if (success) {
                     fileService.saveAllRides(rideService.getRides());
                     JOptionPane.showMessageDialog(mainFrame, "Seat booked successfully for Ride " + rideId + "!", "Booked", JOptionPane.INFORMATION_MESSAGE);
-                    // Update table display
                     Ride updated = rideService.findRideById(rideId);
-                    searchResultsModel.setValueAt(updated.getAvailableSeats(), row, 6);
+                    if (updated != null) {
+                        searchResultsModel.setValueAt(updated.getAvailableSeats(), row, 6);
+                    }
                 }
             } catch (RideNotFoundException | InvalidRideException ex) {
                 JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Booking Error", JOptionPane.ERROR_MESSAGE);
@@ -913,27 +1260,42 @@ public class CampusRideUI {
         centerArea.add(scrollPane, BorderLayout.CENTER);
         centerArea.add(tableActions, BorderLayout.SOUTH);
 
-        panel.add(centerArea, BorderLayout.CENTER);
-        return panel;
+        contentPanel.add(centerArea, BorderLayout.CENTER);
+        return createAuthenticatedLayout(SCREEN_SEARCH_RIDE, contentPanel);
     }
 
     // =========================================================================
     // SCREEN 7: My Rides Screen
     // =========================================================================
     private JPanel createMyRidesPanel() {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(new Color(248, 250, 252));
-        panel.setBorder(new EmptyBorder(20, 25, 20, 25));
+        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        contentPanel.setBackground(COLOR_CREAM);
+        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
 
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
+
+        JPanel titles = new JPanel();
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        titles.setOpaque(false);
+
         JLabel title = new JLabel("Rides Offered by You");
         title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        title.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel sub = new JLabel("View and monitor rides you have published as a driver");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setForeground(COLOR_MUTED_TEXT);
+
+        titles.add(title);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(sub);
+
         JButton backBtn = createOutlineButton("← Back to Dashboard");
         backBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
-        header.add(title, BorderLayout.WEST);
+        header.add(titles, BorderLayout.WEST);
         header.add(backBtn, BorderLayout.EAST);
-        panel.add(header, BorderLayout.NORTH);
+        contentPanel.add(header, BorderLayout.NORTH);
 
         String[] cols = {"Ride ID", "From", "To", "Date", "Departure Time", "Seats Left", "Fare ($)"};
         myRidesModel = new DefaultTableModel(cols, 0) {
@@ -944,16 +1306,19 @@ public class CampusRideUI {
         JTable table = new JTable(myRidesModel);
         styleTable(table);
         JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createLineBorder(COLOR_BORDER, 1));
+        scrollPane.getViewport().setBackground(COLOR_IVORY_CARD);
 
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         bottom.setOpaque(false);
         JButton refreshBtn = createSecondaryButton("Refresh Rides");
         refreshBtn.addActionListener(e -> refreshMyRides());
         bottom.add(refreshBtn);
 
-        panel.add(scrollPane, BorderLayout.CENTER);
-        panel.add(bottom, BorderLayout.SOUTH);
-        return panel;
+        contentPanel.add(scrollPane, BorderLayout.CENTER);
+        contentPanel.add(bottom, BorderLayout.SOUTH);
+
+        return createAuthenticatedLayout(SCREEN_MY_RIDES, contentPanel);
     }
 
     private void refreshMyRides() {
@@ -979,16 +1344,42 @@ public class CampusRideUI {
     // SCREEN 8: Profile Screen
     // =========================================================================
     private JPanel createProfilePanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(new Color(241, 245, 249));
+        JPanel contentPanel = new JPanel(new BorderLayout(16, 16));
+        contentPanel.setBackground(COLOR_CREAM);
+        contentPanel.setBorder(new EmptyBorder(22, 28, 22, 28));
 
-        JPanel card = createCardPanel(450, 420);
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+
+        JPanel titles = new JPanel();
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        titles.setOpaque(false);
 
         JLabel title = new JLabel("Student Profile");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        title.setForeground(new Color(15, 23, 42));
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        title.setForeground(COLOR_FOREST_GREEN);
+
+        JLabel sub = new JLabel("Official student credentials and verification status");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        sub.setForeground(COLOR_MUTED_TEXT);
+
+        titles.add(title);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(sub);
+
+        JButton backBtn = createOutlineButton("← Back to Dashboard");
+        backBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
+        header.add(titles, BorderLayout.WEST);
+        header.add(backBtn, BorderLayout.EAST);
+        contentPanel.add(header, BorderLayout.NORTH);
+
+        JPanel card = createCardPanel(480, 440);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
+        JLabel avatarBadge = new JLabel("NSSCE Student Profile");
+        avatarBadge.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        avatarBadge.setForeground(COLOR_FOREST_GREEN);
+        avatarBadge.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         profileNameLabel = new JLabel("Name: ");
         profileIdLabel = new JLabel("Student ID: ");
@@ -998,41 +1389,57 @@ public class CampusRideUI {
 
         Font labelFont = new Font("Segoe UI", Font.PLAIN, 15);
         profileNameLabel.setFont(labelFont);
+        profileNameLabel.setForeground(COLOR_MAIN_TEXT);
         profileIdLabel.setFont(labelFont);
+        profileIdLabel.setForeground(COLOR_MAIN_TEXT);
         profileEmailLabel.setFont(labelFont);
+        profileEmailLabel.setForeground(COLOR_MAIN_TEXT);
         profileRoleLabel.setFont(labelFont);
+        profileRoleLabel.setForeground(COLOR_MAIN_TEXT);
         profileVerifyStatusLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        profileVerifyStatusLabel.setForeground(new Color(16, 185, 129));
+        profileVerifyStatusLabel.setForeground(COLOR_SUCCESS);
 
-        JButton backBtn = createPrimaryButton("Return to Dashboard");
-        backBtn.setMaximumSize(new Dimension(360, 38));
-        backBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        backBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
+        JButton returnBtn = createPrimaryButton("Return to Dashboard");
+        returnBtn.setMaximumSize(new Dimension(380, 40));
+        returnBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        returnBtn.addActionListener(e -> showScreen(SCREEN_DASHBOARD));
 
-        card.add(Box.createVerticalStrut(15));
-        card.add(title);
-        card.add(Box.createVerticalStrut(25));
-        card.add(profileNameLabel);
+        card.add(Box.createVerticalStrut(10));
+        card.add(avatarBadge);
+        card.add(Box.createVerticalStrut(22));
+        card.add(createProfileRowPanel("Name:", profileNameLabel));
+        card.add(Box.createVerticalStrut(10));
+        card.add(createProfileRowPanel("Student ID:", profileIdLabel));
+        card.add(Box.createVerticalStrut(10));
+        card.add(createProfileRowPanel("Email:", profileEmailLabel));
+        card.add(Box.createVerticalStrut(10));
+        card.add(createProfileRowPanel("Role:", profileRoleLabel));
+        card.add(Box.createVerticalStrut(10));
+        card.add(createProfileRowPanel("Status:", profileVerifyStatusLabel));
+        card.add(Box.createVerticalStrut(28));
+        card.add(returnBtn);
         card.add(Box.createVerticalStrut(12));
-        card.add(profileIdLabel);
-        card.add(Box.createVerticalStrut(12));
-        card.add(profileEmailLabel);
-        card.add(Box.createVerticalStrut(12));
-        card.add(profileRoleLabel);
-        card.add(Box.createVerticalStrut(12));
-        card.add(profileVerifyStatusLabel);
-        card.add(Box.createVerticalStrut(35));
-        card.add(backBtn);
-        card.add(Box.createVerticalStrut(15));
 
-        panel.add(card);
-        return panel;
+        JPanel centerWrapper = new JPanel(new GridBagLayout());
+        centerWrapper.setOpaque(false);
+        centerWrapper.add(card);
+
+        contentPanel.add(centerWrapper, BorderLayout.CENTER);
+        return createAuthenticatedLayout(SCREEN_PROFILE, contentPanel);
+    }
+
+    private JPanel createProfileRowPanel(String tag, JLabel label) {
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.setOpaque(false);
+        row.setMaximumSize(new Dimension(420, 32));
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        row.add(label, BorderLayout.CENTER);
+        return row;
     }
 
     private void refreshProfile() {
         Student current = authService.getCurrentLoggedInStudent();
         if (current != null) {
-            // Polymorphism & Encapsulation demonstration
             current.displayProfile();
 
             profileNameLabel.setText("Name: " + current.getName());
@@ -1040,7 +1447,8 @@ public class CampusRideUI {
             profileEmailLabel.setText("College Email: " + current.getEmail());
             profileRoleLabel.setText("Role: Registered NSSCE Student");
             boolean isVerified = authService.isEmailVerified(current.getEmail());
-            profileVerifyStatusLabel.setText("Verification: " + (isVerified ? "Verified ✔" : "Pending ⏳"));
+            profileVerifyStatusLabel.setText("Verification: " + (isVerified ? "Verified Student ✔" : "Pending Verification ⏳"));
+            profileVerifyStatusLabel.setForeground(isVerified ? COLOR_SUCCESS : COLOR_WARNING);
         }
     }
 
@@ -1056,104 +1464,391 @@ public class CampusRideUI {
     }
 
     // =========================================================================
-    // UI Helpers & Modern Component Styling
+    // UI Helpers & Reusable Design System Components
     // =========================================================================
+
+    /**
+     * Creates an ivory rounded card panel with subtle border.
+     */
     private JPanel createCardPanel(int width, int height) {
-        JPanel card = new JPanel();
+        JPanel card = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(COLOR_IVORY_CARD);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.setColor(new Color(0xD6, 0xDE, 0xD2));
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        card.setOpaque(false);
         card.setPreferredSize(new Dimension(width, height));
         card.setMaximumSize(new Dimension(width, height));
-        card.setBackground(Color.WHITE);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
-                new EmptyBorder(25, 25, 25, 25)
-        ));
+        card.setBorder(new EmptyBorder(24, 28, 24, 28));
         return card;
     }
 
+    /**
+     * Creates a stat summary card displaying strictly live data metrics.
+     */
+    private JPanel createStatCard(String title, JLabel valueLabel, String subtitle) {
+        JPanel card = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(COLOR_IVORY_CARD);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.setColor(COLOR_BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        card.setOpaque(false);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(new EmptyBorder(14, 18, 14, 18));
+
+        JLabel titleLbl = new JLabel(title);
+        titleLbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        titleLbl.setForeground(COLOR_MUTED_TEXT);
+        titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        valueLabel.setForeground(COLOR_FOREST_GREEN);
+        valueLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel subLbl = new JLabel(subtitle);
+        subLbl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        subLbl.setForeground(COLOR_MUTED_TEXT);
+        subLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        card.add(titleLbl);
+        card.add(Box.createVerticalStrut(4));
+        card.add(valueLabel);
+        card.add(Box.createVerticalStrut(3));
+        card.add(subLbl);
+
+        return card;
+    }
+
+    /**
+     * Creates a styled text field with high-contrast font and active focus highlight ring.
+     */
     private JTextField createStyledTextField() {
         JTextField field = new JTextField();
-        field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setForeground(COLOR_MAIN_TEXT);
+        field.setBackground(Color.WHITE);
+        field.setCaretColor(COLOR_FOREST_GREEN);
+        field.setOpaque(true);
         field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(203, 213, 225), 1),
-                new EmptyBorder(5, 8, 5, 8)
+                BorderFactory.createLineBorder(new Color(0xB8, 0xC6, 0xB5), 1),
+                new EmptyBorder(8, 12, 8, 12)
         ));
+
+        field.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(COLOR_FOREST_GREEN, 2),
+                        new EmptyBorder(7, 11, 7, 11)
+                ));
+            }
+            @Override
+            public void focusLost(FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(0xB8, 0xC6, 0xB5), 1),
+                        new EmptyBorder(8, 12, 8, 12)
+                ));
+            }
+        });
+        return field;
+    }
+
+    /**
+     * Creates a styled password field matching the text fields.
+     */
+    private JPasswordField createStyledPasswordField() {
+        JPasswordField field = new JPasswordField();
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setForeground(COLOR_MAIN_TEXT);
+        field.setBackground(Color.WHITE);
+        field.setCaretColor(COLOR_FOREST_GREEN);
+        field.setOpaque(true);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xB8, 0xC6, 0xB5), 1),
+                new EmptyBorder(8, 12, 8, 12)
+        ));
+
+        field.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(COLOR_FOREST_GREEN, 2),
+                        new EmptyBorder(7, 11, 7, 11)
+                ));
+            }
+            @Override
+            public void focusLost(FocusEvent e) {
+                field.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(0xB8, 0xC6, 0xB5), 1),
+                        new EmptyBorder(8, 12, 8, 12)
+                ));
+            }
+        });
         return field;
     }
 
     private void addFormField(JPanel container, String labelText, JComponent field) {
         JLabel label = new JLabel(labelText);
         label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        label.setForeground(COLOR_MAIN_TEXT);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         field.setAlignmentX(Component.LEFT_ALIGNMENT);
-        field.setMaximumSize(new Dimension(400, 34));
+        field.setMaximumSize(new Dimension(420, 38));
 
         container.add(label);
         container.add(Box.createVerticalStrut(4));
         container.add(field);
-        container.add(Box.createVerticalStrut(10));
+        container.add(Box.createVerticalStrut(9));
     }
 
+    /**
+     * Forest-green primary button with high-contrast white text and custom painted rounded background.
+     * Guaranteed to never be overridden by Windows LookAndFeel default button styling.
+     */
     private JButton createPrimaryButton(String text) {
-        JButton btn = new JButton(text);
+        JButton btn = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
         btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         btn.setForeground(Color.WHITE);
-        btn.setBackground(new Color(13, 148, 136)); // Teal accent
+        btn.setBackground(COLOR_FOREST_GREEN);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
         btn.setFocusPainted(false);
-        btn.setBorder(new EmptyBorder(8, 16, 8, 16));
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_FOREST_GREEN, 1),
+                new EmptyBorder(8, 16, 8, 16)
+        ));
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(COLOR_HOVER_GREEN);
+                btn.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(COLOR_FOREST_GREEN);
+                btn.repaint();
+            }
+        });
         return btn;
     }
 
+    /**
+     * High-contrast Sage/Gold-accented secondary button with dark deep-forest text.
+     */
     private JButton createSecondaryButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        btn.setForeground(new Color(15, 23, 42));
-        btn.setBackground(new Color(241, 245, 249));
+        Color normalBg = COLOR_SAGE_ACCENT; // #CFE0CC
+        Color hoverBg = new Color(0xBE, 0xD3, 0xBB);
+        Color borderCol = new Color(0x9E, 0xB6, 0x9B);
+        Color textCol = COLOR_DEEP_GREEN; // #102F27
+
+        JButton btn = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btn.setForeground(textCol);
+        btn.setBackground(normalBg);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
         btn.setFocusPainted(false);
         btn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(203, 213, 225), 1),
+                BorderFactory.createLineBorder(borderCol, 1),
+                new EmptyBorder(8, 14, 8, 14)
+        ));
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(hoverBg);
+                btn.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(normalBg);
+                btn.repaint();
+            }
+        });
+        return btn;
+    }
+
+    /**
+     * Clean outline button with warm cream background and dark forest-green text.
+     */
+    private JButton createOutlineButton(String text) {
+        Color normalBg = new Color(0xF7, 0xF3, 0xE8);
+        Color hoverBg = new Color(0xEB, 0xE5, 0xD4);
+        Color borderCol = new Color(0xA8, 0xBD, 0xA5);
+        Color textCol = COLOR_FOREST_GREEN;
+
+        JButton btn = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btn.setForeground(textCol);
+        btn.setBackground(normalBg);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
+        btn.setFocusPainted(false);
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(borderCol, 1),
                 new EmptyBorder(7, 14, 7, 14)
         ));
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(hoverBg);
+                btn.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(normalBg);
+                btn.repaint();
+            }
+        });
         return btn;
     }
 
-    private JButton createOutlineButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        btn.setForeground(new Color(71, 85, 105));
-        btn.setBackground(Color.WHITE);
+    /**
+     * High-contrast Crimson Red danger button with pure white text.
+     */
+    private JButton createDangerButton(String text) {
+        Color normalBg = COLOR_DANGER; // #991B1B
+        Color hoverBg = COLOR_DANGER_HOVER; // #B91C1C
+        Color textCol = Color.WHITE;
+
+        JButton btn = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btn.setForeground(textCol);
+        btn.setBackground(normalBg);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
         btn.setFocusPainted(false);
         btn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
-                new EmptyBorder(6, 12, 6, 12)
+                BorderFactory.createLineBorder(new Color(0xB8, 0x30, 0x30), 1),
+                new EmptyBorder(7, 14, 7, 14)
         ));
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(hoverBg);
+                btn.repaint();
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(normalBg);
+                btn.repaint();
+            }
+        });
         return btn;
     }
 
-    private JButton createDangerButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btn.setForeground(Color.WHITE);
-        btn.setBackground(new Color(225, 29, 72)); // Rose red
-        btn.setFocusPainted(false);
-        btn.setBorder(new EmptyBorder(7, 14, 7, 14));
-        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        return btn;
-    }
-
+    /**
+     * Styles JTable with forest-green header, alternating ivory rows, and sage selection.
+     */
     private void styleTable(JTable table) {
         table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        table.setRowHeight(30);
+        table.setRowHeight(36);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setGridColor(new Color(241, 245, 249));
-        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        table.getTableHeader().setBackground(new Color(241, 245, 249));
-        table.getTableHeader().setForeground(new Color(51, 65, 85));
+        table.setGridColor(COLOR_BORDER);
+        table.setShowVerticalLines(false);
+        table.setShowHorizontalLines(true);
+        table.setSelectionBackground(new Color(0xE0, 0xEC, 0xDE));
+        table.setSelectionForeground(COLOR_DEEP_GREEN);
 
-        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
-        centerRenderer.setHorizontalAlignment(JLabel.CENTER);
-        table.setDefaultRenderer(Object.class, centerRenderer);
+        JTableHeader header = table.getTableHeader();
+        header.setPreferredSize(new Dimension(header.getWidth(), 38));
+        header.setReorderingAllowed(false);
+
+        DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object val, boolean isSel, boolean hasFocus, int row, int col) {
+                JLabel lbl = (JLabel) super.getTableCellRendererComponent(t, val, isSel, hasFocus, row, col);
+                lbl.setBackground(COLOR_FOREST_GREEN);
+                lbl.setForeground(COLOR_CREAM);
+                lbl.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                lbl.setHorizontalAlignment(JLabel.CENTER);
+                lbl.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+                lbl.setOpaque(true);
+                return lbl;
+            }
+        };
+        header.setDefaultRenderer(headerRenderer);
+
+        DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object val, boolean isSelected, boolean hasFocus, int row, int col) {
+                JLabel lbl = (JLabel) super.getTableCellRendererComponent(t, val, isSelected, hasFocus, row, col);
+                if (!isSelected) {
+                    lbl.setBackground(row % 2 == 0 ? COLOR_IVORY_CARD : Color.WHITE);
+                    lbl.setForeground(COLOR_MAIN_TEXT);
+                } else {
+                    lbl.setBackground(new Color(0xE0, 0xEC, 0xDE));
+                    lbl.setForeground(COLOR_DEEP_GREEN);
+                }
+                lbl.setHorizontalAlignment(JLabel.CENTER);
+                lbl.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+                lbl.setOpaque(true);
+                return lbl;
+            }
+        };
+        table.setDefaultRenderer(Object.class, cellRenderer);
     }
 }

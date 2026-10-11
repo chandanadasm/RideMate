@@ -1,4 +1,4 @@
 # Format: RideID,StartingLocation,Destination,Date,DepartureTime,AvailableSeats,CostPerPerson,DriverName,DriverID,DriverEmail,DriverPassword,VehicleType,VehicleNumber,VehicleCapacity
-# Example: RIDE-101,North Campus,City Center,2026-10-15,09:30 AM,3,15.50,Alice Smith,STU101,alice@college.edu,pass123,Car,ABC-1234,4
-RIDE-101,Palakkad,Kozhikode,2026-12-06,10,1,150.0,Abiraj T M,25B130,25b130@nssce.ac.in,Abiyeyy,1,KL49 4652,2
-RIDE-102,Akathethara,lulu mall,2026-10-11,08:30 AM,3,20.0,Abhay,25b169,25b169@nssce.ac.in,,Bike,KL-09-AB-1234,4
+RIDE-101,Palakkad,Kozhikode,2026-12-06,10,0,150.0,Abiraj T M,25B130,25b130@nssce.ac.in,Abiyeyy,1,KL49 4652,2
+RIDE-102,Akathethara,lulu mall,2026-10-11,08:30 AM,0,20.0,Abhay,25b169,25b169@nssce.ac.in,,Bike,KL-09-AB-1234,4
+RIDE-103,Akathethara,Townstand,2026-10-15,08:30 AM,0,20.0,CHANDANADAS M,25B1006,25b1006@nssce.ac.in,,Bike,KL-09-AB-1234,1
